@@ -4,7 +4,9 @@
   Rule IDs 100701-100776 sit in the local range; renumber if they collide.
 -->
 <group name="php2shell,">
+
   <!-- Slashes are escaped: regex101 reads a bare / as a delimiter, PCRE2 accepts both. -->
+
   <!-- The OOM probe kills a worker, so the access log shows a 5xx. -->
   <rule id="100701" level="3">
     <if_sid>31122</if_sid>
@@ -471,4 +473,5 @@
     </mitre>
     <group>php2shell,php2shell_http,</group>
   </rule>
+
 </group>

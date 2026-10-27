@@ -33,7 +33,8 @@ def load():
     if dupes or bad_level or bad_mitre:
         raise SystemExit(f"dupes={dupes} bad_level={bad_level} bad_mitre={bad_mitre}")
 
-    # A rule inserted through a <group> line nests instead of appending, and the file still parses, so check placement explicitly.
+    # A rule inserted through a <group> line nests instead of appending, and the
+    # file still parses, so check placement explicitly.
     if root.tag != "group":
         raise SystemExit(f"root element is {root.tag}, expected group")
     stray = [r.get("id") for r in rules if r not in list(root)]

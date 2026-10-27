@@ -1,10 +1,10 @@
 # PHP2Shell detection rules for Wazuh
 
-<img width="2400" height="760" alt="image" src="https://github.com/user-attachments/assets/73facd5a-b8d8-4b4d-88e2-a8842285a21f" />
-
-46 Wazuh rules for CVE-2026-109618 and CVE-2026-109619, the PHP `session.upload_progress` flaws published on 2026-10-21.
-The rules cover the request shapes the public exploit clients send, the PHP and kernel messages a
-failed or successful exploitation leaves, the files the chain drops, and the processes it spawns.
+46 Wazuh rules for CVE-2026-109618 and CVE-2026-109619, the PHP
+`session.upload_progress` flaws published on 2026-10-21. The rules cover the
+request shapes the public exploit clients send, the PHP and kernel messages a
+failed or successful exploitation leaves, the files the chain drops, and the
+processes it spawns.
 
 They detect effects. No log source reports the memory corruption itself, so a
 single alert is a triage lead, not proof of RCE.

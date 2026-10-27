@@ -1,9 +1,10 @@
 <!--
   PHP2Shell (CVE-2026-109618, CVE-2026-109619) detection rules.
   Install as /var/ossec/etc/rules/php2shell_rules.xml and restart the wazuh manager.
-  Sample Rule ID 100701-100766 sit in the local range; renumber if they collide.
+  Rule ID 100701-100770 sit in the local range; renumber if they collide.
 -->
 <group name="php2shell,">
+  <!-- Slashes are escaped: regex101 reads a bare / as a delimiter, PCRE2 accepts both. -->
   <!-- The OOM probe kills a worker, so the access log shows a 5xx. -->
   <rule id="100701" level="3">
     <if_sid>31122</if_sid>
@@ -98,7 +99,7 @@
 
   <!-- Kernel messages carry no source IP, so these rules cannot use the srcip correlations. -->
   <rule id="100720" level="10">
-    <regex type="pcre2">(?:php-fpm|php[0-9.]*|httpd|apache2)\[\d+\]: segfault at</regex>
+    <regex type="pcre2">(?:php-fpm|php-cgi|php)[\w.-]*\[\d+\]: segfault at</regex>
     <description>PHP2Shell: PHP worker terminated by a segmentation fault.</description>
     <mitre>
       <id>T1190</id>
@@ -108,7 +109,7 @@
   </rule>
 
   <rule id="100721" level="10">
-    <regex type="pcre2">Out of memory: Kill(?:ed)? process \d+ \((?:php-fpm|php[0-9.]*|httpd|apache2)\)</regex>
+    <regex type="pcre2">Out of memory: Kill(?:ed)? process \d+ \((?:apache2|httpd|php-fpm|php-cgi|php)[\w.-]*\)</regex>
     <description>PHP2Shell: out-of-memory killer terminated a PHP worker.</description>
     <mitre>
       <id>T1499</id>
@@ -139,7 +140,7 @@
 
   <rule id="100731" level="12">
     <if_sid>554</if_sid>
-    <field name="file" type="pcre2">^/tmp/.*\.php$</field>
+    <field name="file" type="pcre2">^\/tmp\/.*\.php$</field>
     <description>PHP2Shell: PHP file created in /tmp, matching the webshell path used by published exploits.</description>
     <mitre>
       <id>T1505.003</id>
@@ -158,7 +159,7 @@
   </rule>
 
   <rule id="100741" level="10">
-    <regex type="pcre2">Content-Disposition:\s*(?:form-data;\s*)?name="?PHPSESSID"?</regex>
+    <regex type="pcre2">Content-Disposition:\s*(?:form-data;\s*)?name="?PHPSESSID"?(?=[;\s]|$)</regex>
     <description>PHP2Shell: session id supplied in a multipart body field instead of a cookie.</description>
     <mitre>
       <id>T1190</id>
@@ -168,7 +169,7 @@
 
   <!-- Boundary string hardcoded in the public PoC that the Suricata rule keys on. -->
   <rule id="100742" level="13">
-    <regex type="pcre2">boundary=S{17}\b</regex>
+    <regex type="pcre2">boundary="?S{17}"?(?=[;\s]|$)</regex>
     <description>PHP2Shell: multipart boundary matching the published PoC probe.</description>
     <mitre>
       <id>T1190</id>
@@ -178,7 +179,7 @@
 
   <!-- Payload carried in the filename: PHP open tag, or a serialized object after a pipe. -->
   <rule id="100743" level="13">
-    <regex type="pcre2">filename="[^"]*(?:&lt;\?php|%3C\?php|\|O:[0-9]+:)</regex>
+    <regex type="pcre2">(?i)filename="[^"]*(?:&lt;\?php|%3C(?:\?|%3F)php|\|O:[0-9]+:)</regex>
     <description>PHP2Shell: PHP code or a serialized object embedded in a multipart filename.</description>
     <mitre>
       <id>T1505.003</id>
@@ -197,7 +198,7 @@
 
   <!-- aancw scanner, dimasma scan.py, Ademking version template. -->
   <rule id="100750" level="3">
-    <regex type="pcre2">"(?:GET|HEAD) /(?:phpinfo|info|phpversion|version|status|test|pi|i|php|nosession)\.php[^"]* HTTP/[0-9.]+"</regex>
+    <regex type="pcre2">"(?:GET|HEAD) \/(?:phpinfo|info|phpversion|version|status|test|pi|i|php|nosession)\.php[^"]* HTTP\/[0-9.]+"</regex>
     <description>PHP2Shell: request for a PHP version or configuration disclosure page.</description>
     <mitre>
       <id>T1592.004</id>
@@ -206,7 +207,7 @@
   </rule>
 
   <rule id="100751" level="6" frequency="10" timeframe="120">
-    <regex type="pcre2">"(?:GET|HEAD) [^"]*\.php[^"]* HTTP/[0-9.]+" 404</regex>
+    <regex type="pcre2">"(?:GET|HEAD) [^"]*\.php[^"]* HTTP\/[0-9.]+" 404</regex>
     <same_srcip />
     <description>PHP2Shell: PHP path enumeration, 10 missing endpoints from one source in 120s.</description>
     <mitre>
@@ -260,7 +261,7 @@
   <!-- ZeroHack drops pwn.php; Joas v2 drops /tmp/.p2s_v2.php and upshell targets. -->
   <rule id="100756" level="13">
     <if_sid>554</if_sid>
-    <field name="file" type="pcre2">(?:^|/)(?:pwn|shell|cmd|c99|r57|wso|upshell)\.php$|\.p2s[^/]*\.php$</field>
+    <field name="file" type="pcre2">(?:^|\/)(?:pwn|shell|cmd|c99|r57|wso|upshell)\.php$|\.p2s[^\/]*\.php$</field>
     <description>PHP2Shell: PHP file with a webshell name created on the host.</description>
     <mitre>
       <id>T1505.003</id>
@@ -269,7 +270,7 @@
   </rule>
 
   <rule id="100757" level="13">
-    <regex type="pcre2">(?=[^\r\n]*(?:php-fpm|php-cgi|apache2|httpd))(?=[^\r\n]*(?:/bin/(?:ba|da)?sh|cmd\.exe|powershell))</regex>
+    <regex type="pcre2">(?=[^\r\n]*(?:php-fpm|php-cgi|apache2|httpd))(?=[^\r\n]*(?:\/bin\/(?:ba|da)?sh|cmd\.exe|powershell))</regex>
     <description>PHP2Shell: web server or PHP worker spawned a shell.</description>
     <mitre>
       <id>T1059.004</id>
@@ -279,7 +280,7 @@
 
   <!-- ZeroHack reverse_shell.php and Joas reverse mode. -->
   <rule id="100758" level="13">
-    <regex type="pcre2">/dev/tcp/\d{1,3}(?:\.\d{1,3}){3}|mkfifo\s+\S+|socket\.socket\([^\r\n]*SOCK_STREAM</regex>
+    <regex type="pcre2">\/dev\/(?:tcp|udp)\/[^\s"\x27]+|mkfifo\s+\S+|socket\.socket\([^\r\n]*SOCK_STREAM</regex>
     <description>PHP2Shell: reverse shell primitive in a logged command line.</description>
     <mitre>
       <id>T1059.004</id>
@@ -308,7 +309,7 @@
   </rule>
 
   <rule id="100761" level="10">
-    <regex type="pcre2">"(?:GET|POST) [^"]*\?(?:[^"]*&amp;)?auth_pass=[^"]*&amp;?[^"]*cmd=</regex>
+    <regex type="pcre2">"(?:GET|POST) [^"]*\?[^"]*auth_pass=[^"&amp;\s]*[&amp;;][^"\s]*cmd=</regex>
     <description>PHP2Shell: request using the dropped webshell authentication and command parameters.</description>
     <mitre>
       <id>T1505.003</id>
@@ -318,7 +319,7 @@
 
   <!-- Joas v1/v2 use C*10; dimasma and eness use S*17; aancw uses its own prefix. -->
   <rule id="100762" level="10">
-    <regex type="pcre2">boundary=(?:C{10}|S{17})|boundary=----php2shellscanner</regex>
+    <regex type="pcre2">boundary="?(?:C{10}|S{17}|----php2shellscanner)</regex>
     <description>PHP2Shell: multipart boundary fingerprint of a published exploit client.</description>
     <mitre>
       <id>T1190</id>
@@ -327,7 +328,7 @@
   </rule>
 
   <rule id="100763" level="6">
-    <regex type="pcre2">"(?:POST|PUT|PATCH) [^"]*\.php[^"]* HTTP/[0-9.]+" 41[37]</regex>
+    <regex type="pcre2">"(?:POST|PUT|PATCH) [^"]*\.php[^"]* HTTP\/[0-9.]+" 41[37]</regex>
     <description>PHP2Shell: request body to a PHP endpoint rejected as too large, consistent with an OOM probe.</description>
     <mitre>
       <id>T1190</id>
@@ -345,6 +346,27 @@
       <id>T1505.003</id>
     </mitre>
     <group>php2shell,php2shell_correlate,</group>
+  </rule>
+
+  <rule id="100765" level="14">
+    <if_matched_sid>100741,100743</if_matched_sid>
+    <regex type="pcre2">"(?:POST|PUT) [^"]*\.php[^"]* HTTP\/[0-9.]+" 5\d\d</regex>
+    <same_srcip />
+    <description>PHP2Shell: failing PHP request from a source that already sent a multipart session-injection probe.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell,php2shell_correlate,</group>
+  </rule>
+
+  <!-- projectdiscovery template: boundary is empty, field name is a 62-deep array chain. -->
+  <rule id="100766" level="12">
+    <regex type="pcre2">Content-Disposition:\s*name=[^\r\n]*(?:\[[a-z]*\]){10,}</regex>
+    <description>PHP2Shell: multipart field name with a deep array chain, the shape of the OOM probe builder.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell,php2shell_body,</group>
   </rule>
 
   <!-- Ademking LFI template and aarsaputra chain: the include path names the session file. -->
@@ -385,26 +407,5 @@
       <id>T1190</id>
     </mitre>
     <group>php2shell,php2shell_recon,</group>
-  </rule>
-
-  <!-- projectdiscovery template: boundary is empty, field name is a 62-deep array chain. -->
-  <rule id="100766" level="12">
-    <regex type="pcre2">Content-Disposition:\s*name=[^\r\n]*(?:\[a\]){10,}|name="?[^"]*(?:\[\]){10,}</regex>
-    <description>PHP2Shell: multipart field name with a deep array chain, the shape of the OOM probe builder.</description>
-    <mitre>
-      <id>T1190</id>
-    </mitre>
-    <group>php2shell,php2shell_body,</group>
-  </rule>
-
-  <rule id="100765" level="14">
-    <if_matched_sid>100741,100743</if_matched_sid>
-    <regex type="pcre2">"(?:POST|PUT) [^"]*\.php[^"]* HTTP\/[0-9.]+" 5\d\d</regex>
-    <same_srcip />
-    <description>PHP2Shell: failing PHP request from a source that already sent a multipart session-injection probe.</description>
-    <mitre>
-      <id>T1190</id>
-    </mitre>
-    <group>php2shell,php2shell_correlate,</group>
   </rule>
 </group>

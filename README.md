@@ -143,6 +143,9 @@ text-only rules to the sample lines. It fails if a rule matches no sample. It
 does not replace `wazuh-logtest`, which also runs the decoder and the parent
 chain.
 
+Patterns escape `/` as `\/`. Wazuh accepts either form; regex101 reads a bare
+`/` as a delimiter and reports a pattern error.
+
 For a live check, paste lines from `logtest-samples.txt` into
 `/var/ossec/bin/wazuh-logtest`. Frequency rules (100702, 100704, 100711,
 100722, 100751) need the parent line replayed several times inside the

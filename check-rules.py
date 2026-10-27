@@ -39,6 +39,11 @@ def load():
                     re.compile(node.text.strip())
                 except re.error as exc:
                     raise SystemExit(f"regex {r.get('id')}: {exc}")
+                # regex101 treats a bare slash as a delimiter
+                if node.get("type") == "pcre2":
+                    bare = re.search(r"(?<!\\)/", node.text.strip())
+                    if bare:
+                        raise SystemExit(f"unescaped slash in {r.get('id')}: {node.text.strip()}")
     return rules
 
 

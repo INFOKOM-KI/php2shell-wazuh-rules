@@ -99,7 +99,7 @@
 
   <!-- Kernel messages carry no source IP, so these rules cannot use the srcip correlations. -->
   <rule id="100720" level="10">
-    <regex type="pcre2">(?:php-fpm|php-cgi|php)[\w.-]*\[\d+\]: segfault at</regex>
+    <regex type="pcre2">(?:php-fpm|php-cgi|php|apache2|httpd)[\w.-]*\[\d+\]: segfault at</regex>
     <description>PHP2Shell: PHP worker terminated by a segmentation fault.</description>
     <mitre>
       <id>T1190</id>

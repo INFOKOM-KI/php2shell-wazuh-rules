@@ -67,7 +67,7 @@ that carries the line.
 | ID | Level | Fires on |
 |---|---|---|
 | 100752 | 13 | `zend_mm_heap corrupted` |
-| 100720 | 10 | PHP or httpd segfault |
+| 100720 | 10 | `php-fpm`, `php-cgi`, `apache2` or `httpd` segfault |
 | 100721 | 10 | OOM killer kills a PHP worker |
 | 100722 | 14 | 5 worker deaths in 300 s |
 | 100753 | 15 | corruption within 300 s of an arming probe |
@@ -146,11 +146,19 @@ chain.
 Patterns escape `/` as `\/`. Wazuh accepts either form; regex101 reads a bare
 `/` as a delimiter and reports a pattern error.
 
-For a live check, paste lines from `logtest-samples.txt` into
-`/var/ossec/bin/wazuh-logtest`. Frequency rules (100702, 100704, 100711,
-100722, 100751) need the parent line replayed several times inside the
-timeframe. FIM rules cannot be tested with logtest; create and rename a
-throwaway `.php` file under a monitored directory instead.
+For a live check, paste lines into `/var/ossec/bin/wazuh-logtest` from the file
+that matches the stack:
+
+| File | Stack |
+|---|---|
+| `logtest-samples-apache2.txt` | mod_php: `[php:warn]` error lines, `apache2[...]: segfault`, `(apache2)` OOM kill |
+| `logtest-samples-nginx.txt` | php-fpm: `FastCGI sent in stderr`, `[pool www] child ... said into stderr`, `php-fpm8.2[...]` segfault, `(php-fpm8.2)` OOM kill |
+
+Access-log lines use the combined format both servers emit by default.
+Frequency rules (100702, 100704, 100711, 100722, 100751) need the parent line
+replayed several times inside the timeframe. FIM rules cannot be tested with
+logtest; create and rename a throwaway `.php` file under a monitored directory
+instead.
 
 ## Known limits
 

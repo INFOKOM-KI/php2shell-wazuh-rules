@@ -5,12 +5,13 @@ Offline check for php2shell_rules.xml: XML structure, regex compilation, and sam
 Usage: python3 check-rules.py [rules.xml] [samples_logs.txt]
 """
 
+import glob
 import re
 import sys
 import xml.etree.ElementTree as ET
 
 RULES = sys.argv[1] if len(sys.argv) > 1 else "php2shell_rules.xml"
-SAMPLES = sys.argv[2] if len(sys.argv) > 2 else "logtest-samples.txt"
+SAMPLES = sys.argv[2] if len(sys.argv) > 2 else None
 
 # Decoder and correlation rules need a live manager, so the checker leaves them to wazuh-logtest.
 COND = {
@@ -53,18 +54,21 @@ def main():
         (r.get("id"), [(c.tag, c.text.strip()) for c in r if c.tag in ("match", "regex")])
         for r in rules if not ({c.tag for c in r} & COND)
     ]
-    samples = [l.strip() for l in open(SAMPLES, encoding="utf-8") if l.strip()]
+    files = [SAMPLES] if SAMPLES else sorted(glob.glob("logtest-samples-*.txt"))
+    samples = [(f, l.strip()) for f in files for l in open(f, encoding="utf-8") if l.strip()]
 
     covered = set()
-    for line in samples:
+    for name, line in samples:
         hits = [rid for rid, conds in text_rules if all(re.search(p, line) for _, p in conds)]
         covered.update(hits)
-        print(f"{','.join(hits) or '--':>16}  {line[:96]}")
+        label = "nginx" if "nginx" in name else "apache"
+        print(f"{label:>6} {','.join(hits) or '--':>16}  {line[:88]}")
 
     missing = [rid for rid, _ in text_rules if rid not in covered]
     if missing:
         raise SystemExit(f"\nrules with no sample: {missing}")
-    print(f"\n{len(rules)} rules, {len(text_rules)} text-only, all reachable")
+    print(f"\n{len(files)} sample files, {len(samples)} lines, {len(rules)} rules, "
+          f"{len(text_rules)} text-only, all reachable")
 
 
 if __name__ == "__main__":

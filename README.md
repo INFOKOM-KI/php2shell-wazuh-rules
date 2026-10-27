@@ -174,23 +174,6 @@ throwaway `.php` file under a monitored directory instead.
 `techniques.md` lists every exploit type found in the eleven source
 repositories and the rule that covers it.
 
-## What the sources contributed
-
-- `aancw/php2shell-scanner`: version and phpinfo probing, the 1 KB arming
-  probe, `PHPSESSID` in the body with no cookie, handler-mismatch check.
-- `Ademking/php2shell-nuclei-templates`: the four request templates, PHP
-  warning strings, `<?php` and `|O:` payloads in filenames.
-- `projectdiscovery/nuclei-templates`: OOM probe sizes, the deep array-chain
-  body, the `Unknown` file marker.
-- `dimasma0305/php2shell`: boundary fingerprint and its own false-positive
-  note about benign uploads.
-- `eness/...PoC`, `aarsaputra/php2shell`, `adriyansyah-mf/php2shell-bookworm`:
-  four-stage chain, 14-byte command carrier, worker rotation, save-path probe.
-- `JoasASantos/php2shell-exploit`, `9bie/php2shell-bypass-aslr-exp`,
-  `ZeroHackOrg/php2shell-poc`, `jf0x3f/php2shell-pocs`: `.htaccess` and
-  `auto_prepend_file` persistence, webshell drop, worker pinning,
-  `zend_mm_heap corrupted`, the 80,000-header trigger.
-
 ## References
 
 - PHP advisories GHSA-w8hw-w9fx-j79w and GHSA-6wmf-4rv5-p3rp

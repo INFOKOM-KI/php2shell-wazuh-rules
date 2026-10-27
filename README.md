@@ -1,5 +1,8 @@
 # PHP2Shell detection rules for Wazuh
 
+<img width="2400" height="760" alt="image" src="https://github.com/user-attachments/assets/f5224df4-cc7f-4f96-909e-d1efc1fd0b57" />
+
+
 40 Wazuh rules for CVE-2026-109618 and CVE-2026-109619, the PHP
 `session.upload_progress` flaws published on 2026-10-21. The rules cover the
 request shapes the public exploit clients send, the PHP and kernel messages a

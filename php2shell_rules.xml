@@ -349,7 +349,7 @@
 
   <!-- Ademking LFI template and aarsaputra chain: the include path names the session file. -->
   <rule id="100767" level="10">
-    <regex type="pcre2">"(?:GET|POST) [^"]*/(?:tmp|run|var/lib/php)[^" ]*/sess_[A-Za-z0-9,-]{15,}[^"]* HTTP/</regex>
+    <regex type="pcre2">"(?:GET|POST) [^"]*\/(?:tmp|run|var\/lib\/php)[^" ]*\/sess_[A-Za-z0-9,-]{15,}[^"]* HTTP\/</regex>
     <description>PHP2Shell: request path points at a PHP session file, the include step of the injection chain.</description>
     <mitre>
       <id>T1190</id>
@@ -399,7 +399,7 @@
 
   <rule id="100765" level="14">
     <if_matched_sid>100741,100743</if_matched_sid>
-    <regex type="pcre2">"(?:POST|PUT) [^"]*\.php[^"]* HTTP/[0-9.]+" 5\d\d</regex>
+    <regex type="pcre2">"(?:POST|PUT) [^"]*\.php[^"]* HTTP\/[0-9.]+" 5\d\d</regex>
     <same_srcip />
     <description>PHP2Shell: failing PHP request from a source that already sent a multipart session-injection probe.</description>
     <mitre>

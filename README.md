@@ -24,8 +24,9 @@ Every rule carries `php2shell` plus one layer group: `php2shell_http`,
 `php2shell_recon`, `php2shell_exec`, or `php2shell_correlate`.
 
 Rules 100720, 100721, and 100752 also carry `php2shell_crash_signal`, the group
-100722 counts. The counter stays out of its own group so it cannot re-trigger on
-itself.
+100722 counts. Rules 100740, 100741, and 100743 carry `php2shell_arm`, the group
+100753 and 100765 count. A counter stays out of the group it counts so it cannot
+re-trigger on itself.
 
 ## Rules
 
@@ -41,15 +42,17 @@ itself.
 | 100751 | 6 | 10 missing `.php` paths from one IP in 120 s |
 | 100761 | 10 | `auth_pass=` and `cmd=` of the dropped ZeroHack webshell |
 | 100763 | 6 | HTTP 413/417 on a `.php` POST, an edge rejecting an oversized probe |
-| 100765 | 14 | 5xx from an IP that already sent a session-injection probe (body log required) |
+| 100765 | 14 | 5xx from an IP that sent a session-injection probe in the last 300 s (body log required) |
 | 100767 | 10 | request path names a session file (`sess_<id>`), the LFI include step |
 | 100770 | 5 | three or more `q\d{7}` query pairs, the 9bie transport marker |
 | 100771 | 7 | HTTP 502 on a `.php` request, a FastCGI worker dying mid-request |
 | 100775 | 10 | request path points at a web server log file, the log poisoning include |
 | 100776 | 12 | PHP tag inside the closing header of an access log line |
 
-Rules 100701 and 100703 depend on Wazuh rules 31122 and 31123, which exist in
-the stock ruleset and are keyed on the decoded status code.
+Rules 100701, 100703, 100751, and 100765 depend on stock Wazuh rules 31101,
+31120, 31122, and 31123, keyed on the decoded status code. The cross-source
+correlations take `if_sid` for the current event and `if_matched_group` for the
+earlier one, because `if_matched_sid` accepts a single rule ID.
 
 ### PHP runtime messages
 
@@ -75,8 +78,8 @@ that carries the line.
 | 100720 | 10 | `php-fpm`, `php-cgi`, `apache2` or `httpd` segfault |
 | 100721 | 10 | OOM killer kills a PHP worker |
 | 100722 | 14 | 5 worker deaths in 300 s |
-| 100753 | 15 | corruption within 300 s of an arming probe |
-| 100764 | 15 | corruption within 300 s of an `auto_prepend_file` or `.htaccess` write |
+| 100753 | 15 | corruption within 300 s of a session upload-progress arming probe |
+| 100764 | 15 | corruption within 300 s of a persistence write |
 
 ### Filesystem and process
 
@@ -146,10 +149,10 @@ python3 check-rules.py
 ```
 
 The script parses the XML, rejects duplicate IDs and out-of-range levels, checks
-that every MITRE ID is well formed, compiles every regex, and applies all
-text-only rules to the sample lines. It fails if a rule matches no sample. It
-does not replace `wazuh-logtest`, which also runs the decoder and the parent
-chain.
+that every MITRE ID is well formed, compiles every regex, applies all text-only
+rules to the sample lines, and rejects correlation options analysisd drops at
+load. It fails if a rule matches no sample. It does not replace `wazuh-logtest`,
+which also runs the decoder and the parent chain.
 
 Patterns escape `/` as `\/`. Wazuh accepts either form; regex101 reads a bare
 `/` as a delimiter and reports a pattern error.
@@ -163,10 +166,10 @@ that matches the stack:
 | `logtest-samples-nginx.txt` | php-fpm: `FastCGI sent in stderr`, `[pool www] child ... said into stderr`, `php-fpm8.2[...]` segfault, `(php-fpm8.2)` OOM kill |
 
 Access-log lines use the combined format both servers emit by default.
-Frequency rules (100702, 100704, 100711, 100722, 100751) need the parent line
-replayed several times inside the timeframe. FIM rules cannot be tested with
-logtest; create and rename a throwaway `.php` file under a monitored directory
-instead.
+Frequency rules (100702, 100704, 100711, 100722, 100751, 100753, 100764,
+100765) need the parent line replayed several times inside the timeframe. FIM
+rules cannot be tested with logtest; create and rename a throwaway `.php` file
+under a monitored directory instead.
 
 ## Known limits
 

@@ -42,6 +42,24 @@ def load():
     if stray or nested:
         raise SystemExit(f"rules outside the root group: {stray}; nested rules: {nested}")
 
+    # Load-time checks: analysisd takes one ID per if_matched_sid, needs a
+    # timeframe for a real window, and rejects frequency/same_* with no if_matched.
+    bad_ctx = []
+    for r in rules:
+        tags = {c.tag for c in r}
+        rid = r.get("id")
+        sid = (r.findtext("if_matched_sid") or "").strip()
+        if sid and not sid.isdigit():
+            bad_ctx.append(f"{rid}: if_matched_sid takes one ID, got {sid!r}")
+        if tags & {"if_matched_sid", "if_matched_group"}:
+            if int(r.get("frequency", 0) or 0) < 2 or not r.get("timeframe"):
+                bad_ctx.append(f"{rid}: if_matched_* needs frequency>=2 and timeframe")
+        elif "frequency" in tags or any(
+                t.startswith(("same_", "different_")) for t in tags):
+            bad_ctx.append(f"{rid}: frequency/same_* without if_matched_*")
+    if bad_ctx:
+        raise SystemExit("correlation: " + "; ".join(bad_ctx))
+
     for r in rules:
         for node in r:
             if node.tag in ("regex", "match", "field", "url") and (node.text or "").strip():

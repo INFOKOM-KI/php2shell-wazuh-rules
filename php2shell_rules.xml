@@ -1,12 +1,10 @@
 <!--
   PHP2Shell (CVE-2026-109618, CVE-2026-109619) detection rules.
   Install as /var/ossec/etc/rules/php2shell_rules.xml and restart the wazuh manager.
-  Rule IDs 100701-100776 sit in the local range; renumber if they collide.
+  Rule ID 100701-100776 sit in the local range; renumber if they collide.
 -->
 <group name="php2shell,">
-
   <!-- Slashes are escaped: regex101 reads a bare / as a delimiter, PCRE2 accepts both. -->
-
   <!-- The OOM probe kills a worker, so the access log shows a 5xx. -->
   <rule id="100701" level="3">
     <if_sid>31122</if_sid>
@@ -119,6 +117,18 @@
     <group>php2shell,php2shell_crash,php2shell_crash_signal,</group>
   </rule>
 
+  <!-- if_matched_group links only rules already loaded, so this sits above 100722.
+       jf0x3f stale-state lab: the consumer connection dies with this message. -->
+  <rule id="100752" level="13">
+    <match>zend_mm_heap corrupted</match>
+    <description>PHP2Shell: Zend allocator heap corruption reported by the PHP engine.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell,php2shell_crash,php2shell_crash_signal,</group>
+  </rule>
+
   <rule id="100722" level="14" frequency="5" timeframe="300">
     <if_matched_group>php2shell_crash_signal</if_matched_group>
     <description>PHP2Shell: repeated PHP worker crashes or OOM kills, consistent with an active corruption campaign.</description>
@@ -157,7 +167,7 @@
     <mitre>
       <id>T1190</id>
     </mitre>
-    <group>php2shell,php2shell_body,</group>
+    <group>php2shell,php2shell_body,php2shell_arm,</group>
   </rule>
 
   <rule id="100741" level="10">
@@ -166,7 +176,7 @@
     <mitre>
       <id>T1190</id>
     </mitre>
-    <group>php2shell,php2shell_body,</group>
+    <group>php2shell,php2shell_body,php2shell_arm,</group>
   </rule>
 
   <!-- Boundary string hardcoded in the public PoC that the Suricata rule keys on. -->
@@ -186,7 +196,7 @@
     <mitre>
       <id>T1505.003</id>
     </mitre>
-    <group>php2shell,php2shell_body,</group>
+    <group>php2shell,php2shell_body,php2shell_arm,</group>
   </rule>
 
   <rule id="100744" level="12">
@@ -208,7 +218,9 @@
     <group>php2shell,php2shell_recon,</group>
   </rule>
 
+  <!-- if_matched_sid takes one ID, so the count uses the stock 4xx rule. -->
   <rule id="100751" level="6" frequency="10" timeframe="120">
+    <if_matched_sid>31101</if_matched_sid>
     <regex type="pcre2">"(?:GET|HEAD) [^"]*\.php[^"]* HTTP\/[0-9.]+" 404</regex>
     <same_srcip />
     <description>PHP2Shell: PHP path enumeration, 10 missing endpoints from one source in 120s.</description>
@@ -218,19 +230,10 @@
     <group>php2shell,php2shell_recon,</group>
   </rule>
 
-  <!-- jf0x3f stale-state lab: the consumer connection dies with this message. -->
-  <rule id="100752" level="13">
-    <match>zend_mm_heap corrupted</match>
-    <description>PHP2Shell: Zend allocator heap corruption reported by the PHP engine.</description>
-    <mitre>
-      <id>T1190</id>
-      <id>T1499</id>
-    </mitre>
-    <group>php2shell,php2shell_crash,php2shell_crash_signal,</group>
-  </rule>
-
-  <rule id="100753" level="15">
-    <if_matched_sid>100740,100741,100743</if_matched_sid>
+  <!-- if_sid matches the corruption event; if_matched_group supplies the earlier probe. -->
+  <rule id="100753" level="15" frequency="2" timeframe="300">
+    <if_sid>100710,100720,100752</if_sid>
+    <if_matched_group>php2shell_arm</if_matched_group>
     <regex type="pcre2">zend_mm_heap corrupted|segfault at|Allowed memory size of</regex>
     <description>PHP2Shell: worker corruption within 300s of a session upload-progress arming probe.</description>
     <mitre>
@@ -338,11 +341,12 @@
     <group>php2shell,php2shell_http,</group>
   </rule>
 
-  <!-- FIM events carry no srcip, so this matches on host scope. -->
-  <rule id="100764" level="15">
-    <if_matched_sid>100730,100755,100744</if_matched_sid>
+  <!-- FIM events carry no srcip, so this correlates on host scope. -->
+  <rule id="100764" level="15" frequency="2" timeframe="300">
+    <if_sid>100720,100752</if_sid>
+    <if_matched_group>php2shell_persist</if_matched_group>
     <regex type="pcre2">zend_mm_heap corrupted|segfault at</regex>
-    <description>PHP2Shell: worker corruption within 300s of an auto_prepend_file or .htaccess persistence write.</description>
+    <description>PHP2Shell: worker corruption within 300s of a persistence write (auto_prepend_file, .htaccess, .user.ini, or webshell drop).</description>
     <mitre>
       <id>T1190</id>
       <id>T1505.003</id>
@@ -350,11 +354,12 @@
     <group>php2shell,php2shell_correlate,</group>
   </rule>
 
-  <rule id="100765" level="14">
-    <if_matched_sid>100741,100743</if_matched_sid>
+  <rule id="100765" level="14" frequency="2" timeframe="300">
+    <if_sid>31120</if_sid>
+    <if_matched_group>php2shell_arm</if_matched_group>
     <regex type="pcre2">"(?:POST|PUT) [^"]*\.php[^"]* HTTP\/[0-9.]+" 5\d\d</regex>
     <same_srcip />
-    <description>PHP2Shell: failing PHP request from a source that already sent a multipart session-injection probe.</description>
+    <description>PHP2Shell: failing PHP request from a source that sent a session-injection probe within 300s.</description>
     <mitre>
       <id>T1190</id>
     </mitre>
@@ -473,5 +478,4 @@
     </mitre>
     <group>php2shell,php2shell_http,</group>
   </rule>
-
 </group>

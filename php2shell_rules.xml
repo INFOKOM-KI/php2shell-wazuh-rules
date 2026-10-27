@@ -1,7 +1,7 @@
 <!--
   PHP2Shell (CVE-2026-109618, CVE-2026-109619) detection rules.
   Install as /var/ossec/etc/rules/php2shell_rules.xml and restart the wazuh manager.
-  Rule ID 100701-100770 sit in the local range; renumber if they collide.
+  Rule IDs 100701-100776 sit in the local range; renumber if they collide.
 -->
 <group name="php2shell,">
   <!-- Slashes are escaped: regex101 reads a bare / as a delimiter, PCRE2 accepts both. -->
@@ -369,9 +369,9 @@
     <group>php2shell,php2shell_body,</group>
   </rule>
 
-  <!-- Ademking LFI template and aarsaputra chain: the include path names the session file. -->
+  <!-- Ademking LFI template, aarsaputra and syrex1013: the include path names the session file. -->
   <rule id="100767" level="10">
-    <regex type="pcre2">"(?:GET|POST) [^"]*\/(?:tmp|run|var\/lib\/php)[^" ]*\/sess_[A-Za-z0-9,-]{15,}[^"]* HTTP\/</regex>
+    <regex type="pcre2">"(?:GET|POST) [^"]*\/sess_[A-Za-z0-9,-]{15,}[^"]* HTTP\/</regex>
     <description>PHP2Shell: request path points at a PHP session file, the include step of the injection chain.</description>
     <mitre>
       <id>T1190</id>
@@ -407,5 +407,68 @@
       <id>T1190</id>
     </mitre>
     <group>php2shell,php2shell_recon,</group>
+  </rule>
+
+
+
+  <!-- ikow Chain E: the FPM worker dies mid-request, so nginx answers 502. -->
+  <rule id="100771" level="7">
+    <regex type="pcre2">"(?:GET|POST|PUT|PATCH) [^"]*\.php[^"]* HTTP\/[0-9.]+" 502</regex>
+    <description>PHP2Shell: HTTP 502 from a PHP endpoint, the signature of a FastCGI worker dying mid-request.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell,php2shell_http,</group>
+  </rule>
+
+  <!-- ikow detection SID 2026105 and the 9bie transport. -->
+  <rule id="100772" level="5">
+    <regex type="pcre2">Transfer-Encoding:\s*chunked</regex>
+    <description>PHP2Shell: chunked request body, used to bypass post_max_size before the upload-progress handler runs.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell,php2shell_body,</group>
+  </rule>
+
+  <!-- ikow detection SID 2026104: the filename inflates the session file. -->
+  <rule id="100773" level="8">
+    <regex type="pcre2">filename="[^"]{400,}</regex>
+    <description>PHP2Shell: oversized multipart filename, the session inflation step.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell,php2shell_body,</group>
+  </rule>
+
+  <!-- ikow detection SID 2026109: leaked heap bytes land in the session cookie. -->
+  <rule id="100774" level="10">
+    <regex type="pcre2">Set-Cookie:\s*PHPSESSID=[^A-Za-z0-9,;-]</regex>
+    <description>PHP2Shell: session cookie whose value starts with a non-session byte, the heap leak in the response.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell,php2shell_body,</group>
+  </rule>
+
+  <!-- syrex1013 poc.py: log poisoning writes the payload, then includes the log. -->
+  <rule id="100775" level="10">
+    <regex type="pcre2">"(?:GET|POST) [^"]*\/(?:apache2?|nginx|httpd)\/(?:access|error)\.log[^"]* HTTP\/</regex>
+    <description>PHP2Shell: request path points at a web server log file, the include step of log poisoning.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell,php2shell_http,</group>
+  </rule>
+
+  <rule id="100776" level="12">
+    <regex type="pcre2">&lt;\?php[^"]*"$</regex>
+    <description>PHP2Shell: PHP open tag inside the closing quoted header of an access log line, the log poisoning write.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>php2shell,php2shell_http,</group>
   </rule>
 </group>

@@ -2,11 +2,9 @@
 
 <img width="2400" height="760" alt="image" src="https://github.com/user-attachments/assets/73facd5a-b8d8-4b4d-88e2-a8842285a21f" />
 
-40 Wazuh rules for CVE-2026-109618 and CVE-2026-109619, the PHP
-`session.upload_progress` flaws published on 2026-10-21. The rules cover the
-request shapes the public exploit clients send, the PHP and kernel messages a
-failed or successful exploitation leaves, the files the chain drops, and the
-processes it spawns.
+46 Wazuh rules for CVE-2026-109618 and CVE-2026-109619, the PHP `session.upload_progress` flaws published on 2026-10-21.
+The rules cover the request shapes the public exploit clients send, the PHP and kernel messages a
+failed or successful exploitation leaves, the files the chain drops, and the processes it spawns.
 
 They detect effects. No log source reports the memory corruption itself, so a
 single alert is a triage lead, not proof of RCE.
@@ -18,7 +16,7 @@ install -m 640 php2shell_rules.xml /var/ossec/etc/rules/php2shell_rules.xml
 /var/ossec/bin/wazuh-control restart
 ```
 
-Rules use 100701 to 100770. Renumber if your local set already uses that block.
+Rules use 100701 to 100776. Renumber if your local set already uses that block.
 Every rule carries `php2shell` plus one layer group: `php2shell_http`,
 `php2shell_php`, `php2shell_crash`, `php2shell_persist`, `php2shell_body`,
 `php2shell_recon`, `php2shell_exec`, or `php2shell_correlate`.
@@ -37,13 +35,16 @@ itself.
 | 100702 | 10 | 5 of those from one IP in 120 s |
 | 100703 | 4 | HTTP 503 from a `.php` URL |
 | 100704 | 11 | 4 of those from one IP in 90 s |
-| 100763 | 6 | HTTP 413/417 on a `.php` POST, an edge rejecting an oversized probe |
-| 100765 | 14 | 5xx from an IP that already sent a session-injection probe (body log required) |
 | 100750 | 3 | GET of a PHP version or phpinfo page |
 | 100751 | 6 | 10 missing `.php` paths from one IP in 120 s |
-| 100767 | 10 | request path points at a session file (`/tmp/.../sess_<id>`), the LFI include step |
 | 100761 | 10 | `auth_pass=` and `cmd=` of the dropped ZeroHack webshell |
+| 100763 | 6 | HTTP 413/417 on a `.php` POST, an edge rejecting an oversized probe |
+| 100765 | 14 | 5xx from an IP that already sent a session-injection probe (body log required) |
+| 100767 | 10 | request path names a session file (`sess_<id>`), the LFI include step |
 | 100770 | 5 | three or more `q\d{7}` query pairs, the 9bie transport marker |
+| 100771 | 7 | HTTP 502 on a `.php` request, a FastCGI worker dying mid-request |
+| 100775 | 10 | request path points at a web server log file, the log poisoning include |
+| 100776 | 12 | PHP tag inside the closing header of an access log line |
 
 Rules 100701 and 100703 depend on Wazuh rules 31122 and 31123, which exist in
 the stock ruleset and are keyed on the decoded status code.
@@ -80,8 +81,8 @@ that carries the line.
 | ID | Level | Fires on |
 |---|---|---|
 | 100730 | 12 | `.htaccess` added or changed |
-| 100755 | 8 | `.user.ini` added or changed |
 | 100731 | 12 | `.php` created under `/tmp` |
+| 100755 | 8 | `.user.ini` added or changed |
 | 100756 | 13 | webshell filename created (`pwn.php`, `shell.php`, `*.p2s*.php`, ...) |
 | 100757 | 13 | web worker spawned a shell |
 | 100758 | 13 | `/dev/tcp/`, `mkfifo`, or a Python socket in a command line |
@@ -103,11 +104,14 @@ access-log-only deployments.
 | 100740 | 6 | `PHP_SESSION_UPLOAD_PROGRESS` field |
 | 100741 | 10 | `PHPSESSID` sent as a multipart field instead of a cookie |
 | 100742 | 13 | boundary `S` repeated 17 times (dimasma/eness clients) |
-| 100762 | 10 | boundary `C` repeated 10 times or `----php2shellscanner` |
 | 100743 | 13 | `<?php`, `%3C?php`, or `\|O:N:` inside a multipart filename |
-| 100766 | 12 | field name with a 10+ deep array chain (projectdiscovery OOM probe) |
 | 100744 | 12 | `auto_prepend_file=` in a logged request |
 | 100760 | 13 | `<<<P2S>>>` marker of the v2 webshell |
+| 100762 | 10 | boundary `C` repeated 10 times or `----php2shellscanner` |
+| 100766 | 12 | field name with a 10+ deep array chain (projectdiscovery OOM probe) |
+| 100772 | 5 | `Transfer-Encoding: chunked`, the `post_max_size` bypass |
+| 100773 | 8 | multipart filename over 400 bytes, session-file inflation |
+| 100774 | 10 | `Set-Cookie: PHPSESSID=` starting with a non-session byte, heap leak |
 
 ## Log sources
 

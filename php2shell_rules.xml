@@ -1,7 +1,7 @@
 <!--
   PHP2Shell (CVE-2026-109618, CVE-2026-109619) detection rules.
   Install as /var/ossec/etc/rules/php2shell_rules.xml and restart the wazuh manager.
-  Rule ID 100701-100776 sit in the local range; renumber if they collide.
+  Rule IDs 100701-100776 sit in the local range; renumber if they collide.
 -->
 <group name="php2shell,">
   <!-- Slashes are escaped: regex101 reads a bare / as a delimiter, PCRE2 accepts both. -->

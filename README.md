@@ -49,8 +49,8 @@ re-trigger on itself.
 | 100775 | 10 | request path points at a web server log file, the log poisoning include |
 | 100776 | 12 | PHP tag inside the closing header of an access log line |
 
-Rules 100701, 100703, 100751, and 100765 depend on stock Wazuh rules 31101,
-31120, 31122, and 31123, keyed on the decoded status code. The cross-source
+Rules 100701 and 100703 sit on stock rules 31122 and 31123, 100751 on 31101, and
+100765 on 31120, all keyed on the decoded status code. The cross-source
 correlations take `if_sid` for the current event and `if_matched_group` for the
 earlier one, because `if_matched_sid` accepts a single rule ID.
 
@@ -148,11 +148,11 @@ FIM rules need the web root and the temp directories in `syscheck`:
 python3 check-rules.py
 ```
 
-The script parses the XML, rejects duplicate IDs and out-of-range levels, checks
-that every MITRE ID is well formed, compiles every regex, applies all text-only
-rules to the sample lines, and rejects correlation options analysisd drops at
-load. It fails if a rule matches no sample. It does not replace `wazuh-logtest`,
-which also runs the decoder and the parent chain.
+The script fails on a duplicate ID, an out-of-range level, a malformed MITRE ID,
+a regex that will not compile, and a correlation option analysisd drops at load.
+It applies every text-only rule to the sample lines and fails if one matches no
+sample. It does not replace `wazuh-logtest`, which also runs the decoder and the
+parent chain.
 
 Patterns escape `/` as `\/`. Wazuh accepts either form; regex101 reads a bare
 `/` as a delimiter and reports a pattern error.
@@ -190,7 +190,7 @@ under a monitored directory instead.
 
 ## Technique to rule map
 
-`techniques.md` lists every exploit type found in the eleven source
+`techniques.md` lists every exploit type found in the thirteen source
 repositories and the rule that covers it.
 
 ## References

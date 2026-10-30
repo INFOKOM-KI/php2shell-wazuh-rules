@@ -46,7 +46,7 @@ Wazuh detection rules in `existing_rules.xml`.
 1. Copy both YAML files to `/var/ossec/etc/shared/default/` on the manager and set ownership:
 
    ```bash
-   install -o wazuh -g wazuh -m 640 sca_php2shell_*.yml /var/ossec/etc/shared/default/
+   install -o wazuh -g wazuh -m 660 sca_php2shell_*.yml /var/ossec/etc/shared/default/
    ```
 
 2. Allow SCA commands from the manager on each agent:

@@ -84,6 +84,44 @@ Copy the files to `/var/ossec/ruleset/sca/` on each agent. Updates do not
 preserve that directory. For a path outside the ruleset, add an absolute path to
 the agent `<sca>` block.
 
+## Containers
+
+By default, the PHP checks run on the host. If PHP runs only inside a
+container, the host `php` command is not the container's PHP.
+
+Options:
+
+1. Set `$php` in `sca_php2shell_php_runtime.yml` to a command that reaches the
+   container. The same 11 checks then run inside the container:
+
+   ```yaml
+   variables:
+     $php: docker exec <container> php
+   ```
+
+2. Install the Wazuh agent in the image and run SCA inside the container.
+3. Check the image during the build with the same PHP commands.
+
+Changing `$php` makes the policy check only the container. If the host also runs
+PHP, keep the default policy for the host and use a copy with a different policy
+ID and check IDs for the container.
+
+One policy checks one container command. For multiple containers, use one policy
+copy per container with unique policy and check IDs, or a wrapper script.
+
+Example:
+
+```bash
+docker exec <container> php -v
+docker exec <container> php -i | grep -E 'session.upload_progress|session.use_strict_mode|expose_php'
+```
+
+Use the fixed release for the branch you run. For PHP 8.2, that is 8.2.35.
+Rebuild the image on a fixed tag. Do not patch only the running container.
+
+The web server policy still checks host-level controls such as auditd and
+ModSecurity. It does not inspect container file systems.
+
 ## Limits
 
 - The PHP checks read the CLI SAPI. Confirm that the FPM pool or Apache vhost

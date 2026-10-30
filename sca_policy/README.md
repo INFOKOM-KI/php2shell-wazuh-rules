@@ -65,6 +65,7 @@ Wazuh detection rules in `existing_rules.xml`.
        <policies>
          <policy>etc/shared/sca_php2shell_php_runtime.yml</policy>
          <policy>etc/shared/sca_php2shell_web_server.yml</policy>
+         <policy>etc/shared/sca_php2shell_docker_runtime.yml</policy>
        </policies>
      </sca>
    </agent_config>

@@ -84,37 +84,63 @@ Copy the files to `/var/ossec/ruleset/sca/` on each agent. Updates do not
 preserve that directory. For a path outside the ruleset, add an absolute path to
 the agent `<sca>` block.
 
-## Containers
+## PHP in Docker containers
 
-By default, the PHP checks run on the host. If PHP runs only inside a
-container, the host `php` command is not the container's PHP.
+`sca_php2shell_docker_runtime.yml` repeats the runtime checks inside every
+running container. A host that runs PHP in both places needs the host policy
+and this one.
 
-Options:
-
-1. Set `$php` in `sca_php2shell_php_runtime.yml` to a command that reaches the
-   container. The same 11 checks then run inside the container:
-
-   ```yaml
-   variables:
-     $php: docker exec <container> php
-   ```
-
-2. Install the Wazuh agent in the image and run SCA inside the container.
-3. Check the image during the build with the same PHP commands.
-
-Changing `$php` makes the policy check only the container. If the host also runs
-PHP, keep the default policy for the host and use a copy with a different policy
-ID and check IDs for the container.
-
-One policy checks one container command. For multiple containers, use one policy
-copy per container with unique policy and check IDs, or a wrapper script.
-
-Example:
+The policy asks Docker for the container IDs, then runs PHP in each container:
 
 ```bash
+docker ps --quiet
 docker exec <container> php -v
-docker exec <container> php -i | grep -E 'session.upload_progress|session.use_strict_mode|expose_php'
+docker exec <container> php -i
 ```
+
+SCA runs with no terminal and no stdin. `docker exec -it` fails there with "the
+input device is not a TTY", so the policy leaves out `-it` and calls PHP
+directly. That also covers images with no shell, and avoids a quoting layer.
+Keep `-it` for the interactive shell:
+
+```bash
+docker ps --format '{{.ID}}  {{.Names}}  {{.Image}}'
+container=$(docker ps --quiet | head -1)
+docker exec -it "$container" /bin/bash
+docker exec -it "$container" /bin/sh   # image without bash
+docker exec "$container" php -v
+docker exec "$container" php -i | grep -E 'session.upload_progress|session.use_strict_mode|expose_php'
+```
+
+Check 42200 fails when the agent cannot reach the Docker daemon. Check 42201
+fails when no running container has a PHP CLI. Without 42201, an empty container
+set would pass every later check.
+
+Every later check runs its command in all containers and fails when any
+container reports a bad value. One check covers all containers, so a failure
+names the directive but not the container that set it. When you need that link,
+use one copy of the policy per container. Give the copy its own
+`id`, its own check IDs (they must be unique across the agent), and a
+`$containers` value of `echo <container>`.
+
+Make those copies on the agent. `docker ps` on the manager lists the manager's
+containers, not the agent's. Keep the copies outside `ruleset/sca`, because an
+agent update replaces that directory.
+
+Each check costs one `docker exec` per container. The default
+`sca.commands_timeout` is 30 seconds. Raise it on hosts with many containers:
+
+```bash
+echo "sca.commands_timeout=120" >> /var/ossec/etc/local_internal_options.conf
+```
+
+The agent user needs access to the Docker socket. The agent runs as root by
+default, so it has access.
+
+A new container appears in the results on the next scan. The default interval
+is 12 hours. Restart the agent after a deploy to scan at once. Editing the
+policy file also triggers a full rescan, and every check in that policy reports
+again.
 
 Use the fixed release for the branch you run. For PHP 8.2, that is 8.2.35.
 Rebuild the image on a fixed tag. Do not patch only the running container.

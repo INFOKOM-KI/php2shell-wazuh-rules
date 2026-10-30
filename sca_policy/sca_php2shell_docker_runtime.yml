@@ -1,0 +1,182 @@
+# Container variant of sca_php2shell_php_runtime.yml. The commands omit -it:
+# SCA runs without a TTY.
+policy:
+  id: "php2shell_docker_runtime"
+  file: "sca_php2shell_docker_runtime.yml"
+  name: "PHP2Shell: PHP runtime in Docker containers"
+  description: "Enumerates running containers and checks the PHP version and the settings that the PHP2Shell chains depend on inside each container."
+  references:
+    - https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w
+    - https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp
+    - https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html
+  regex_type: "pcre2"
+
+requirements:
+  title: "Linux host with a Docker CLI"
+  description: "The policy runs docker ps and docker exec on the agent host, so the agent needs access to the Docker socket."
+  condition: all
+  rules:
+    - 'f:/etc/os-release'
+    - 'c:$docker --version -> r:^Docker version'
+
+variables:
+  $docker: docker
+  $containers: docker ps --quiet
+
+checks:
+  - id: 42200
+    title: "Docker daemon is reachable"
+    description: "docker info returns a server version, so the agent can enumerate containers."
+    rationale: "The rest of the policy reads settings from containers. Without daemon access docker ps returns no IDs, so the other checks test nothing."
+    remediation: "Start the Docker daemon, and run the agent as root or add its user to the docker group."
+    compliance:
+      - nist_sp_800-53: ["CM-6"]
+    condition: all
+    rules:
+      - 'c:$docker info --format {{.ServerVersion}} -> r:^[0-9]+[.]'
+
+  - id: 42201
+    title: "A running container has a PHP CLI"
+    description: "docker ps lists containers, and at least one of them runs a PHP CLI."
+    rationale: "Every other check passes when no container runs PHP, so a stopped or renamed container would hide the gap."
+    remediation: "Confirm that the web containers are running and that one of them has a php binary. The official php images do. A distroless build may not."
+    compliance:
+      - nist_sp_800-53: ["CM-6"]
+    condition: all
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -v 2>/dev/null | grep -c -F PHP" -> n:^(\d+) compare >= 1
+
+  - id: 42202
+    title: "PHP in every container is patched for PHP2Shell"
+    description: "Each container that runs PHP is at or above 8.2.35, 8.3.36, 8.4.27, or 8.5.12."
+    rationale: "These releases fix CVE-2026-109618 and CVE-2026-109619. Containers on 8.1 and older have no upstream fix."
+    remediation: "Rebuild the image on a fixed base tag and redeploy. Do not patch only the running container."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+      - pci_dss_v4.0: ["6.3.3"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -r 'echo (((PHP_VERSION_ID >= 80235 && PHP_VERSION_ID < 80300) || (PHP_VERSION_ID >= 80336 && PHP_VERSION_ID < 80400) || (PHP_VERSION_ID >= 80427 && PHP_VERSION_ID < 80500) || PHP_VERSION_ID >= 80512) ? \"ok\" : \"bad\"), PHP_EOL;' 2>/dev/null | grep -x bad" -> r:.
+
+  - id: 42203
+    title: "session.upload_progress is disabled in every container"
+    description: "No container reports session.upload_progress.enabled as On."
+    rationale: "The upload progress handler is the entry point for the arming probes and the OOM chains."
+    remediation: "Set session.upload_progress.enabled = Off in the php.ini the container loads, then rebuild and redeploy."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+      - pci_dss_v4.0: ["6.3.3"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -i 2>/dev/null | grep -F 'session.upload_progress.enabled => On'" -> r:.
+
+  - id: 42204
+    title: "session.upload_progress cleanup is enabled in every container"
+    description: "No container reports session.upload_progress.cleanup as Off."
+    rationale: "Cleanup removes the session entry that the arming probe leaves behind. It does not replace disabling the feature."
+    remediation: "Set session.upload_progress.cleanup = On in the php.ini the container loads."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -i 2>/dev/null | grep -F 'session.upload_progress.cleanup => Off'" -> r:.
+
+  - id: 42205
+    title: "session.use_strict_mode is enabled in every container"
+    description: "No container reports session.use_strict_mode as Off."
+    rationale: "Strict mode blocks the attacker-supplied session IDs used by the fixation and injection chains."
+    remediation: "Set session.use_strict_mode = 1 in the php.ini the container loads."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -i 2>/dev/null | grep -F 'session.use_strict_mode => Off'" -> r:.
+
+  - id: 42206
+    title: "session.use_only_cookies is enabled in every container"
+    description: "No container reports session.use_only_cookies as Off."
+    rationale: "The arming probes send PHPSESSID as a multipart field. Cookie-only mode rejects that path."
+    remediation: "Set session.use_only_cookies = 1 in the php.ini the container loads."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -i 2>/dev/null | grep -F 'session.use_only_cookies => Off'" -> r:.
+
+  - id: 42207
+    title: "expose_php is disabled in every container"
+    description: "No container reports expose_php as On."
+    rationale: "Scanners read X-Powered-By to choose a target and offsets."
+    remediation: "Set expose_php = Off in the php.ini the container loads."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -i 2>/dev/null | grep -F 'expose_php => On'" -> r:.
+
+  - id: 42208
+    title: "display_errors is disabled in every container"
+    description: "No container reports display_errors as On or STDOUT."
+    rationale: "The public probes use error output to confirm the target and the crash. The CLI SAPI prints On as STDOUT."
+    remediation: "Set display_errors = Off and log errors to a file instead."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -i 2>/dev/null | grep -E 'display_errors => (On|STDOUT)'" -> r:.
+
+  - id: 42209
+    title: "post_max_size is capped at 32 MiB in every container"
+    description: "No container accepts a POST body larger than 32 MiB or leaves the limit unlimited."
+    rationale: "The OOM probes send multipart bodies from 12 MB to 512 MB."
+    remediation: "Set post_max_size = 32M or lower in the php.ini the container loads, and keep upload_max_filesize below it."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -r '$v=ini_get(\"post_max_size\"); $n=(int)$v; $u=substr($v,-1); $m=[\"K\"=>1024,\"M\"=>1048576,\"G\"=>1073741824]; $b=isset($m[$u]) ? $n*$m[$u] : $n; echo (($b<=0 || $b>33554432) ? \"bad\" : \"ok\"), PHP_EOL;' 2>/dev/null | grep -x bad" -> r:.
+
+  - id: 42210
+    title: "allow_url_include is disabled in every container"
+    description: "No container reports allow_url_include as On."
+    rationale: "The syrex FastCGI path sets allow_url_include=On. Disabling it removes that option and limits LFI impact."
+    remediation: "Set allow_url_include = Off in the php.ini the container loads."
+    compliance:
+      - nist_sp_800-53: ["SI-2"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -i 2>/dev/null | grep -F 'allow_url_include => On'" -> r:.
+
+  - id: 42211
+    title: "max_multipart_body_parts is capped in every container"
+    description: "No container sets the multipart part limit above 1000, or leaves it unlimited."
+    rationale: "The nuclei and assetnote probes send 4000 parts in one body."
+    remediation: "Set max_multipart_body_parts = 1000 or lower in the php.ini the container loads."
+    compliance:
+      - nist_sp_800-53: ["SI-2","SC-5"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -r '$v=ini_get(\"max_multipart_body_parts\"); echo (($v!==false && ((int)$v<0 || (int)$v>1000)) ? \"bad\" : \"ok\"), PHP_EOL;' 2>/dev/null | grep -x bad" -> r:.
+
+  - id: 42212
+    title: "session.save_path is outside the web root in every container"
+    description: "No container stores session files under a common web root."
+    rationale: "A session file inside the web root can be fetched directly, and the include step becomes a plain HTTP request."
+    remediation: "Move session.save_path outside the web root in the php.ini the container loads, and set permissions to 700 or 1733."
+    compliance:
+      - nist_sp_800-53: ["AC-3","SC-28"]
+    condition: none
+    rules:
+      - >-
+        sh -c "$containers | xargs -r -I{} docker exec {} php -r '$p=ini_get(\"session.save_path\"); echo (($p!==\"\" && preg_match(\"#(^|;)/(var/www|usr/share/nginx|srv/www|opt/lampp/htdocs)#\",$p)) ? \"bad\" : \"ok\"), PHP_EOL;' 2>/dev/null | grep -x bad" -> r:.

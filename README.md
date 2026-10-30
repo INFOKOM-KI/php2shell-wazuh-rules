@@ -2,11 +2,15 @@
 
 <img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/c4a08715-415b-4e38-a081-904161bb86c4" />
 
-46 Wazuh rules for CVE-2026-109618 and CVE-2026-109619, the PHP
-`session.upload_progress` flaws published on 2026-10-21. The rules cover the
-request shapes the public exploit clients send, the PHP and kernel messages a
-failed or successful exploitation leaves, the files the chain drops, and the
-processes it spawns.
+63 Wazuh rules for CVE-2026-109618 and CVE-2026-109619, the PHP
+`session.upload_progress` flaws published on 2026-10-21. The set also covers
+the related CVE-2026-115560 serialize-handler mismatch.
+
+The rules cover the request shapes the public exploit clients send, the PHP
+and kernel messages a failed or successful exploitation leaves, the files the
+chain drops, the processes it spawns, and the stage pairs that separate a probe
+from a compromise. `techniques.md` maps each exploit type to the rule that
+covers it.
 
 They detect effects. No log source reports the memory corruption itself, so a
 single alert is a triage lead, not proof of RCE.
@@ -14,111 +18,150 @@ single alert is a triage lead, not proof of RCE.
 ## Install
 
 ```bash
-install -m 640 php2shell_rules.xml /var/ossec/etc/rules/php2shell_rules.xml
+install -o root -g wazuh -m 640 existing_rules.xml \
+  /var/ossec/etc/rules/php2shell_rules.xml
 /var/ossec/bin/wazuh-control restart
 ```
 
-Rules use 100701 to 100776. Renumber if your local set already uses that block.
-Every rule carries `php2shell` plus one layer group: `php2shell_http`,
-`php2shell_php`, `php2shell_crash`, `php2shell_persist`, `php2shell_body`,
-`php2shell_recon`, `php2shell_exec`, or `php2shell_correlate`.
+`analysisd` runs as user `wazuh`. A file owned `root:root` with mode 640 is
+skipped at load and the rules stay silent, so keep the `-g wazuh`. Check for
+`(1103): Could not open file` in `/var/ossec/logs/ossec.log` after the restart.
 
-Rules 100720, 100721, and 100752 also carry `php2shell_crash_signal`, the group
-100722 counts. Rules 100740, 100741, and 100743 carry `php2shell_arm`, the group
-100753 and 100765 count. A counter stays out of the group it counts so it cannot
-re-trigger on itself.
+Rules use IDs 111000 to 111153. Renumber if your local set already uses that
+block.
 
-## Rules
+## Dependencies
 
-### Access log
+The rules use stock syscheck parents and host ruleset parents. Install the host
+ruleset first.
 
-| ID | Level | Fires on |
+### Parent rules
+
+| Parent | Line it scopes |
+|---|---|
+| 31100, 31530 | web access log, and POST on it |
+| 31410, 31420 | PHP Warning, PHP Fatal error |
+| 30301, 30302 | Apache error, Apache warn |
+| 31300, 31301 | nginx grouped messages, nginx error |
+| 550, 554 | syscheck checksum change, file added |
+| 100009, 101900 | the host's ModSecurity base rule and the severity-2 rule on it |
+
+111003 lists both ModSecurity parents because 101900 compares `severity` against
+the literal `^2$`, so one parent could leave the rule silent.
+
+### Anchors
+
+Four anchors replace a parent where no single rule owns the log line:
+
+| Anchor | Rules | Line it scopes |
 |---|---|---|
-| 100701 | 3 | HTTP 500 from a `.php` URL |
-| 100702 | 10 | 5 of those from one IP in 120 s |
-| 100703 | 4 | HTTP 503 from a `.php` URL |
-| 100704 | 11 | 4 of those from one IP in 90 s |
-| 100750 | 3 | GET of a PHP version or phpinfo page |
-| 100751 | 6 | 10 missing `.php` paths from one IP in 120 s |
-| 100761 | 10 | `auth_pass=` and `cmd=` of the dropped ZeroHack webshell |
-| 100763 | 6 | HTTP 413/417 on a `.php` POST, an edge rejecting an oversized probe |
-| 100765 | 14 | 5xx from an IP that sent a session-injection probe in the last 300 s (body log required) |
-| 100767 | 10 | request path names a session file (`sess_<id>`), the LFI include step |
-| 100770 | 5 | three or more `q\d{7}` query pairs, the 9bie transport marker |
-| 100771 | 7 | HTTP 502 on a `.php` request, a FastCGI worker dying mid-request |
-| 100775 | 10 | request path points at a web server log file, the log poisoning include |
-| 100776 | 12 | PHP tag inside the closing header of an access log line |
+| `if_group audit_command` | 3 | auditd process records |
+| `decoded_as auditd` | 1 | audit records outside the command group |
+| `if_group modsecurity` | 16 | request bodies a ModSecurity rule matched |
+| `program_name kernel` | 2 | kernel messages, tagged by the syslog decoder |
 
-Rules 100701 and 100703 sit on stock rules 31122 and 31123, 100751 on 31101, and
-100765 on 31120, all keyed on the decoded status code. The cross-source
-correlations take `if_sid` for the current event and `if_matched_group` for the
-earlier one, because `if_matched_sid` accepts a single rule ID.
+### Load behavior
 
-### PHP runtime messages
+A missing `if_sid`, `if_group` or `decoded_as` is fatal at load: analysisd drops
+the rule and logs which one. `program_name` and body-group membership are not
+fatal that way. A kernel line without the tag, or a body line that matched no
+ModSecurity rule, leaves the rule loaded and quiet, so a clean log does not prove
+these are working.
 
-| ID | Level | Fires on |
+After a restart:
+
+```bash
+grep -E "\(761[79]\)|Signature ID" /var/ossec/logs/ossec.log
+```
+
+Each line names a rule and the ID it could not resolve. A clean load prints
+nothing.
+
+Rules load in file order, and `if_matched_sid` only resolves upward. The counter
+111106 therefore sits below 111107, the rule it counts.
+
+### Visibility trade-offs
+
+Parent choice sets what a rule can see. A narrow or mismatched parent can
+silence a rule.
+
+- 111011 fires on POST only, because 31530 is the POST access-log rule.
+- 111001 could not fire. It tested a URL while carrying `if_sid 31410`, the
+  PHP Warning rule, and no event is both. It now sits on 31100.
+- The PHP message rules list `31300` beside the Apache PHP parents, so mod_php
+  error logs and php-fpm stderr through nginx both reach them. 111013 does the
+  same with 31300, 30301 and 30302.
+
+## Rule groups
+
+Every rule carries `php2shell` and `php2shell_exploit` from the file header,
+plus one or more layer groups:
+
+| Group | Rules | Scope |
 |---|---|---|
-| 100710 | 8 | `Allowed memory size of ... bytes exhausted` |
-| 100711 | 13 | 3 memory aborts in 180 s |
-| 100712 | 12 | memory abort with `in Unknown on line`, the PoC probe response |
-| 100713 | 8 | `Session ID is too long or contains illegal characters` |
-| 100714 | 6 | `Failed to read session data` |
-| 100754 | 10 | `Failed to decode session object` / `Session object destruction failed` |
-| 100768 | 6 | `POST Content-Length of ... exceeds the limit of`, PHP dropped an oversized body |
-| 100769 | 6 | `Multipart body parts limit exceeded` |
+| `php2shell_http` | 15 | access log |
+| `php2shell_body` | 18 | request body |
+| `php2shell_php` | 9 | PHP runtime messages |
+| `php2shell_arm` | 11 | probe shapes the chain rules count |
+| `php2shell_persist` | 12 | dropped files, `auto_prepend_file`, webshell markers |
+| `php2shell_recon` | 4 | probing and enumeration |
+| `php2shell_crash` | 4 | worker deaths |
+| `php2shell_crash_signal` | 3 | the crash events 111116 counts |
+| `php2shell_correlate` | 3 | staged chains |
+| `php2shell_exec` | 4 | process execution, `/proc/<pid>/mem` writes |
+| `php2shell_oom` | 2 | the abort events 111143 counts |
 
-These match message text, not a parent decoder, so they fire on any log source
-that carries the line.
+A counter that uses `if_matched_group` never carries the group it counts, so it cannot re-trigger on itself.
 
-### Crash and kernel
+## Severity bands
 
-| ID | Level | Fires on |
+| Band | Meaning | Examples |
 |---|---|---|
-| 100752 | 13 | `zend_mm_heap corrupted` |
-| 100720 | 10 | `php-fpm`, `php-cgi`, `apache2` or `httpd` segfault |
-| 100721 | 10 | OOM killer kills a PHP worker |
-| 100722 | 14 | 5 worker deaths in 300 s |
-| 100753 | 15 | corruption within 300 s of a session upload-progress arming probe |
-| 100764 | 15 | corruption within 300 s of a persistence write |
+| 3 to 4 | Recon or a single generic failure | phpinfo probing, one 500, unwritable save path |
+| 5 to 8 | One indicator of the exploit path | transport marker, chunked body, part-flood, boundary string |
+| 10 to 13 | One strong indicator | session file include, `auto_prepend_file`, shell spawn, `<<<P2S>>>` |
+| 14 to 15 | Two stages seen together | crash after arming probes, crash after persistence writes |
 
-### Filesystem and process
+The bands follow evidence strength. An oversized upload or a generic PHP error
+sits low on purpose: both are routine on healthy deployments.
 
-| ID | Level | Fires on |
+## Detection stages
+
+| Stage | Rules |
+|---|---|
+| Request shape, access log | 111001, 111104, 111108 |
+| Request shape, body | 111121 to 111124, 111126 to 111129, 111144, 111145, 111150, 111152, 111153 |
+| Session and heap effects | 111002, 111009, 111010, 111012, 111112, 111130, 111143 |
+| Worker failure | 111011, 111013, 111099, 111101 to 111103, 111114 to 111116 |
+| Persistence | 111117 to 111120, 111125, 111134, 111147, 111148, 111149, 111151, 111152 |
+| Post-exploitation | 111109, 111110, 111111, 111131 to 111133, 111146, 111147, 111149 |
+| Staged chains | 111100, 111141, 111142 |
+
+The chains need a current event plus earlier events from a named group:
+
+- 111100: crash or shell spawn after 2 arming events in 600 s
+- 111141: crash after 2 persistence writes in 300 s
+- 111142: 5xx from the same source that sent 2 arming events in 300 s
+
+Kernel and FIM events carry no source IP, so 111100 and 111141 are host scope.
+Among the chain rules, only 111142 compares `srcip`.
+
+## Rule overlaps
+
+| Pair or rule | Overlap | Handling |
 |---|---|---|
-| 100730 | 12 | `.htaccess` added or changed |
-| 100731 | 12 | `.php` created under `/tmp` |
-| 100755 | 8 | `.user.ini` added or changed |
-| 100756 | 13 | webshell filename created (`pwn.php`, `shell.php`, `*.p2s*.php`, ...) |
-| 100757 | 13 | web worker spawned a shell |
-| 100758 | 13 | `/dev/tcp/`, `mkfifo`, or a Python socket in a command line |
-| 100759 | 10 | web worker spawned `curl`, `wget`, `ncat`, or `socat` |
-
-100757 to 100759 match any log that carries a full command line: auditd
-`EXECVE` records, `journald`, or a Wazuh command monitor. They use lookaheads,
-so field order inside the event does not matter.
-
-### Request body and response markers
-
-Body rules need ModSecurity audit logs, Suricata `eve.json` with
-`http-body-printable`, or a proxy that logs bodies. 100760 also matches a logged
-response. Plain access logs carry none of this, so these stay silent on
-access-log-only deployments.
-
-| ID | Level | Fires on |
-|---|---|---|
-| 100740 | 6 | `PHP_SESSION_UPLOAD_PROGRESS` field |
-| 100741 | 10 | `PHPSESSID` sent as a multipart field instead of a cookie |
-| 100742 | 13 | boundary `S` repeated 17 times (dimasma/eness clients) |
-| 100743 | 13 | `<?php`, `%3C?php`, or `\|O:N:` inside a multipart filename |
-| 100744 | 12 | `auto_prepend_file=` in a logged request |
-| 100760 | 13 | `<<<P2S>>>` marker of the v2 webshell |
-| 100762 | 10 | boundary `C` repeated 10 times or `----php2shellscanner` |
-| 100766 | 12 | field name with a 10+ deep array chain (projectdiscovery OOM probe) |
-| 100772 | 5 | `Transfer-Encoding: chunked`, the `post_max_size` bypass |
-| 100773 | 8 | multipart filename over 400 bytes, session-file inflation |
-| 100774 | 10 | `Set-Cookie: PHPSESSID=` starting with a non-session byte, heap leak |
+| 111111 and 111151 | The same `auth_pass` and `cmd` pair can appear in a URL or a POST body | Different log sources; one alert per event |
+| 111111 and 111147 | A webshell request with parameters matches the query pair and the path | 111111 is ordered first; 111147 covers the path-only case |
+| 111131 and 111132 | A reverse shell can match the shell-spawn rule and the `/dev/tcp` rule | 111132 is ordered first; a plain shell reports 111131 |
+| Specific rules and 111121 | The generic progress rule can match almost every exploit body | Body rules are ordered specific to generic; recheck order after edits |
+| 111123 and 111126 | Both match fixed boundary strings; 111123 has a known benign match from the dimasma lab | Kept separate so the noisy string stays at its own level |
+| 111002 and 111112 | Both match a memory-limit abort, separated by a lookahead for the source location | Mutually exclusive |
+| 111118, 111120, and 111149 | Webshell files, executable PHP files in `/tmp`, and output files overlap in some cases | Different file classes and levels |
+| 111144, 111150, 111126 | These match fixed strings from public clients | Strong when they match, silent when a client changes the strings |
 
 ## Log sources
+
+### Access and runtime logs
 
 ```xml
 <localfile>
@@ -135,66 +178,129 @@ access-log-only deployments.
 </localfile>
 ```
 
-FIM rules need the web root and the temp directories in `syscheck`:
+### Request bodies
+
+Body rules need ModSecurity audit logs, Suricata `eve.json` with
+`http-body-printable`, or a proxy that logs bodies. Plain access logs carry no
+body, so those rules stay silent.
+
+### FIM scope
 
 ```xml
 <directories realtime="yes" report_changes="yes">/var/www</directories>
 <directories realtime="yes">/tmp</directories>
 ```
 
+Kernel, auditd and FIM rules stay silent without their sources. A missing source
+means no alert, not a failure.
+
 ## Verify
 
 ```bash
-python3 check-rules.py
+python3 check-rules.py existing_rules.xml
 ```
 
-The script fails on a duplicate ID, an out-of-range level, a malformed MITRE ID,
-a regex that will not compile, and a correlation option analysisd drops at load.
-It applies every text-only rule to the sample lines and fails if one matches no
-sample. It does not replace `wazuh-logtest`, which also runs the decoder and the
-parent chain.
+The default rules file is `existing_rules.xml`. Pass another path to check a
+different file.
 
-Patterns escape `/` as `\/`. Wazuh accepts either form; regex101 reads a bare
-`/` as a delimiter and reports a pattern error.
+The script parses the XML, rejects duplicate IDs and out-of-range levels, checks
+that every MITRE ID is well formed, compiles every regex, and applies all
+text-only rules to the sample lines. It fails if a rule matches no sample.
 
-For a live check, paste lines into `/var/ossec/bin/wazuh-logtest` from the file
-that matches the stack:
+It does not replace `wazuh-logtest`, which also runs the decoder and the parent
+chain. The script also ignores rule order and parent groups, so one sample line
+can list several rules that cannot fire on the same event. analysisd applies the
+first matching rule among siblings, and the file orders specific rules before
+generic ones.
 
-| File | Stack |
+Patterns escape `/` as `\/`, and XML text escapes `&` as `&amp;`. The second is
+not optional: one raw `&` stops the file from parsing.
+
+| File | Contents |
 |---|---|
-| `logtest-samples-apache2.txt` | mod_php: `[php:warn]` error lines, `apache2[...]: segfault`, `(apache2)` OOM kill |
-| `logtest-samples-nginx.txt` | php-fpm: `FastCGI sent in stderr`, `[pool www] child ... said into stderr`, `php-fpm8.2[...]` segfault, `(php-fpm8.2)` OOM kill |
+| `logtest-samples-apache2.txt` | mod_php: `[php:warn]` error lines, ModSecurity audit lines, `apache2[...]: segfault`, `(apache2)` OOM kill, access log |
+| `logtest-samples-nginx.txt` | php-fpm: `FastCGI sent in stderr`, `[pool www] child ... said into stderr`, `php-fpm8.2[...]` segfault, `(php-fpm8.2)` OOM kill, access log |
+| `logtest-benign-apache2.txt` | normal traffic, one 404, a 16-`S` boundary, a session cookie with a normal value |
+| `logtest-benign-nginx.txt` | the same shapes on the nginx stack |
 
-Access-log lines use the combined format both servers emit by default.
-Frequency rules (100702, 100704, 100711, 100722, 100751, 100753, 100764,
-100765) need the parent line replayed several times inside the timeframe. FIM
-rules cannot be tested with logtest; create and rename a throwaway `.php` file
-under a monitored directory instead.
+Frequency rules (111099, 111103, 111106, 111116, 111143) need the parent line
+replayed several times inside the timeframe. The chain rules need events from
+two groups. FIM rules cannot be tested with logtest; create and rename a
+throwaway `.php` file under a monitored directory instead.
 
 ## Known limits
 
+### Rule behavior
+
 - A burst of 500s can be a broken deployment, a database outage, or a load
-  test. 100702 and 100704 raise the level on count and timing, nothing more.
-- One memory abort is normal in some applications. 100711 and 100712 are the
+  test. 111099 raises the level on count and timing, nothing more.
+- One memory abort is normal in some applications. 111112 and 111143 are the
   ones worth paging on.
+- Boundaries change per run in most clients. 111121, 111122, 111124, 111144,
+  111145, 111150 and 111152 survive that; the fixed boundary rules do not.
+- 111132 and 111133 are ordered before 111131, so a reverse shell or a network
+  fetch reports the more specific rule. A plain shell spawn reports 111131.
+
+### Log-source gaps
+
+- 111131 and 111133 require an execution record (`EXECVE`, `execve(`, `exe="`
+  or `COMMAND=`). The Elastic APM tracer line does not match: it prints a
+  libcurl version block and its own `php-fpm: pool` name together.
+- Under php-fpm, auditd records the executed binary, so a shell started by a
+  pool child shows `exe="/bin/sh"` or `exe="/usr/bin/curl"`. The pool name
+  is absent and 111131 and 111133 stay quiet. mod_php is covered, because
+  `exe="/usr/sbin/apache2"` sits on the record.
+- 111144 to 111153 report only when their source is collected. The body,
+  access-log, FIM and auditd rules stay silent otherwise.
+- 111146 only fires when auditd records an open or write against
+  `/proc/<pid>/mem`. A host without that audit watch keeps the rule quiet.
+- A passive version check reads `X-Powered-By` or sends a plain `HEAD /`. That
+  leaves no request signature beyond normal traffic. 111105 catches an exposed
+  `phpinfo` page, not a header-only check.
+- Raw FastCGI to FPM, the syrex direct path, bypasses the web access log. The
+  request-shape rules stay silent unless a network sensor, an FPM request log,
+  or an auditd watch supplies the event. A blind timing oracle has the same
+  problem until the command reaches auditd.
+- Body rules see only lines a ModSecurity rule matched. Pair them with a
+  body-logging proxy or a network sensor.
+- FIM rules see only directories in the syscheck scope. Add the web root and the
+  temp directories. A webshell dropped outside a monitored directory produces
+  no alert.
+- Correlating across sources produces no alert when one side is not collected.
+  If only the access log is shipped, the arming group still fills through
+  111001, 111004, 111104 and 111108.
+
+### Tuning
+
 - `.htaccess` edits are routine on shared hosting and in CMS update flows.
-  Expect a tuning pass on 100730.
-- 100742 matched a benign upload with the same 17-`S` boundary in the dimasma
-  lab run. Treat the boundary rules as fingerprints, not verdicts.
-- Boundaries change per run in most clients. 100740, 100741, 100743, and 100766
-  survive that; the boundary rules do not.
-- 100753, 100764, and 100765 correlate across log sources. If one side is not
-  collected, the correlation rule never fires.
+  Expect a tuning pass on 111117.
+- A 17-`S` boundary matched a benign upload in the dimasma lab run. Treat the
+  boundary rules (111123, 111126) as supporting evidence. 111126 also matches
+  a boundary of exactly ten `B` or `C` characters, which a benign client could
+  pick by chance.
+- An oversized multipart filename (111129) and a chunked body (111128) are
+  common in healthy APIs. They sit at 8 and 5 for that reason.
+- 111130 treats a PHPSESSID value of 64 characters or more as a leak. An
+  application that issues its own long session ids raises it. The non-session
+  byte and percent-encoded forms are the stronger signals.
+- 111149 watches for `p1`, `pwn.txt`, `leakfile` and `.p2s_*` output files. A
+  benign job that writes one of those names under `/tmp` or `/out` raises it;
+  the level stays at 8 for that reason.
+
+### Deployment
+
 - PHP 8.1 and older are EOL and get no upstream patch, so turn off
   `session.upload_progress` on those hosts.
 
-## Technique to rule map
+## Related documents
 
-`techniques.md` lists every exploit type found in the thirteen source
-repositories and the rule that covers it.
+- `techniques.md` maps each exploit type and client chain to the rule that
+  covers it.
+- `check-rules.py` runs the offline checks described above.
 
 ## References
 
-- PHP advisories GHSA-w8hw-w9fx-j79w and GHSA-6wmf-4rv5-p3rp
+- PHP advisories: [GHSA-w8hw-w9fx-j79w](https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w),
+  [GHSA-6wmf-4rv5-p3rp](https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp)
 - Fixed releases: 8.2.35, 8.3.36, 8.4.27, 8.5.12
 - Interim mitigation: `session.upload_progress.enabled = Off`

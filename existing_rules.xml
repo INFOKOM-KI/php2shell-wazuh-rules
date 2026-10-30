@@ -1,0 +1,712 @@
+<!--
+  PHP2Shell rules for CVE-2026-109618, CVE-2026-109619, and the related
+  CVE-2026-115560 serialize-handler mismatch.
+  Install as /var/ossec/etc/rules/php2shell_rules.xml, owner root, group wazuh,
+  mode 640. analysisd runs as wazuh; a root:root 640 file is skipped.
+  Local IDs 111000-111153. Parent rules, anchors, log sources, and limits are
+  in README.md. A missing parent drops a rule at load; check ossec.log for
+  (7617) or Signature ID after a restart.
+-->
+<group name="web,attack,rce,php2shell,php2shell_exploit,">
+  <!-- Access log: reconnaissance and exploit transport, visible without body capture. -->
+  <!-- Matches the scanner's user agent in any method, including the GET probes.
+       Recon only: it stays out of php2shell_arm so a scan cannot arm the chain rules. -->
+  <rule id="111000" level="7">
+    <if_sid>31100,31530</if_sid>
+    <decoded_as>web-accesslog</decoded_as>
+    <regex type="pcre2">"[^"]*(?i:php2shell)[^"]*"</regex>
+    <description>PHP2Shell: scanner user agent seen on the web server.</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>php2shell_recon,</group>
+  </rule>
+
+  <!-- 9bie transport: junk query pairs q0000000..q0000004 on every request. -->
+  <rule id="111001" level="5">
+    <if_sid>31100</if_sid>
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">[?&amp;]q\d{7}=[^&amp;\s"]*(?:&amp;q\d{7}=[^&amp;\s"]*){2,}</url>
+    <description>PHP2Shell: three or more seven-digit q parameters, the 9bie client transport marker.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,php2shell_arm,</group>
+  </rule>
+
+  <!-- PHP runtime message: the published probes end in a memory-limit abort. -->
+  <rule id="111002" level="8">
+    <if_sid>30301,31420,31300</if_sid>
+    <regex type="pcre2">Allowed memory size of \d+ bytes exhausted(?![^\r\n]*in Unknown on line \d+)</regex>
+    <description>PHP2Shell: PHP request aborted after exhausting its memory limit, with a source location. Generic on its own, so the level stays low.</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_php,php2shell_oom,</group>
+  </rule>
+
+  <!-- ModSecurity rejects the malformed probe body before PHP sees it. -->
+  <rule id="111003" level="6">
+    <if_sid>101900,100009</if_sid>
+    <match>Failed to parse request body</match>
+    <description>PHP2Shell: ModSecurity failed to parse a request body, seen when a malformed probe is rejected.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,modsecurity,</group>
+  </rule>
+
+  <!-- Session file reached through a request parameter, the include step. -->
+  <rule id="111004" level="10">
+    <if_sid>31100</if_sid>
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">(?i)[?&amp;][\w\-_]+=[^&amp;\s"]*(?:\/|%2f|%5c|\\+)sess_[A-Za-z0-9,._\-]{8,}</url>
+    <description>PHP2Shell: request parameter points at a PHP session file, the include step of the chain.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1005</id>
+    </mitre>
+    <group>php2shell_http,php2shell_arm,file_inclusion,lfi,</group>
+  </rule>
+
+  <rule id="111005" level="6">
+    <if_sid>31410,31300</if_sid>
+    <match>POST Content-Length of</match>
+    <description>PHP2Shell: PHP discarded a POST body larger than post_max_size, which matches the oversized probe.</description>
+    <mitre>
+      <id>T1499.003</id>
+    </mitre>
+    <group>php2shell_php,</group>
+  </rule>
+
+  <rule id="111006" level="6">
+    <if_sid>100009</if_sid>
+    <match>Multipart request body failed strict validation</match>
+    <description>PHP2Shell: ModSecurity rejected a malformed multipart body, seen on the part-flood probes.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,modsecurity,</group>
+  </rule>
+
+  <rule id="111007" level="6">
+    <if_sid>31410,31300</if_sid>
+    <match>Multipart body parts limit exceeded</match>
+    <description>PHP2Shell: request exceeded max_multipart_body_parts, matching the part-flood probes.</description>
+    <mitre>
+      <id>T1499.003</id>
+    </mitre>
+    <group>php2shell_php,</group>
+  </rule>
+
+  <!-- Nginx rejects the oversized body before it reaches PHP. -->
+  <rule id="111008" level="6">
+    <if_sid>31301</if_sid>
+    <match>client intended to send too large body</match>
+    <description>PHP2Shell: web server rejected an oversized request body, consistent with the OOM probe.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <rule id="111009" level="8">
+    <if_sid>31410,30302,31300</if_sid>
+    <match>Session ID is too long or contains illegal characters</match>
+    <description>PHP2Shell: session id rejected as malformed, the arming probe response.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_php,php2shell_arm,</group>
+  </rule>
+
+  <rule id="111010" level="6">
+    <if_sid>31410,30302,31300</if_sid>
+    <match>Failed to read session data</match>
+    <description>PHP2Shell: session data unreadable during request startup. Also fires on a broken save path.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_php,</group>
+  </rule>
+
+  <!-- The OOM probe kills a worker, so the access log shows a 5xx. The url gate
+       rejects ".php" inside a query string and ".php.jpg" style paths. -->
+  <rule id="111011" level="3">
+    <if_sid>31530</if_sid>
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">(?:^[^?]*\.php(?:[\/?]|$)|\/$)</url>
+    <regex type="pcre2">"(?:GET|POST|HEAD|PUT|PATCH|OPTIONS)\s[^"]*" 500 </regex>
+    <description>PHP2Shell: HTTP 500 returned by a PHP endpoint.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <rule id="111012" level="10">
+    <if_sid>31410,31300</if_sid>
+    <regex type="pcre2">Failed to decode session object|Session object destruction failed</regex>
+    <description>PHP2Shell: session payload rejected at decode, the cross-directory serialize handler mismatch.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_php,</group>
+  </rule>
+
+  <rule id="111013" level="13">
+    <if_sid>31300,30301,30302</if_sid>
+    <match>zend_mm_heap corrupted</match>
+    <description>PHP2Shell: Zend allocator heap corruption reported by the PHP engine.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_crash,php2shell_crash_signal,</group>
+  </rule>
+
+  <!-- 500s repeat when a client retries the probe that killed the worker. -->
+  <rule id="111099" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>111011</if_matched_sid>
+    <same_srcip />
+    <description>PHP2Shell: 5 HTTP 500 responses from PHP endpoints on one source in 120s, consistent with OOM probe requests.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <!-- FastCGI worker dies mid-request, so the proxy answers 502. -->
+  <rule id="111101" level="7">
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">^[^?]*\.php(?:[\/?]|$)</url>
+    <regex type="pcre2">"(?:GET|POST|HEAD|PUT|PATCH)\s[^"]*" 502 </regex>
+    <description>PHP2Shell: HTTP 502 from a PHP endpoint, the signature of a FastCGI worker dying mid-request.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <rule id="111102" level="4">
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">^[^?]*\.php(?:[\/?]|$)</url>
+    <regex type="pcre2">"(?:GET|POST|HEAD|PUT|PATCH)\s[^"]*" 503 </regex>
+    <description>PHP2Shell: HTTP 503 from a PHP endpoint, the worker pool is exhausted.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <rule id="111103" level="11" frequency="4" timeframe="90">
+    <if_matched_sid>111102</if_matched_sid>
+    <same_srcip />
+    <description>PHP2Shell: 4 HTTP 503 responses from PHP endpoints on one source in 90s, consistent with workers dying mid-request.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <!-- The edge rejects the oversized probe itself. -->
+  <rule id="111104" level="6">
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">^[^?]*\.php(?:[\/?]|$)</url>
+    <regex type="pcre2">"(?:POST|PUT|PATCH)\s[^"]*" 41[37] </regex>
+    <description>PHP2Shell: request body to a PHP endpoint rejected as too large, consistent with an OOM probe.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,php2shell_arm,</group>
+  </rule>
+
+  <rule id="111105" level="3">
+    <decoded_as>web-accesslog</decoded_as>
+    <regex type="pcre2">"(?:GET|HEAD) \/(?:phpinfo|info|phpversion|version|status|test|pi|i|php|nosession)\.php[^"]* HTTP\/[0-9.]+"</regex>
+    <description>PHP2Shell: request for a PHP version or configuration disclosure page.</description>
+    <mitre>
+      <id>T1592.004</id>
+    </mitre>
+    <group>php2shell_recon,</group>
+  </rule>
+
+  <rule id="111107" level="3">
+    <decoded_as>web-accesslog</decoded_as>
+    <regex type="pcre2">"(?:GET|HEAD|POST)\s[^"]*\.php[^"]*" 40[34] </regex>
+    <description>PHP2Shell: PHP path not found or forbidden, one step of endpoint enumeration.</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>php2shell_recon,</group>
+  </rule>
+
+  <!-- analysisd resolves if_matched_sid at load, so the counted rule sits above it. -->
+  <rule id="111106" level="6" frequency="10" timeframe="120">
+    <if_matched_sid>111107</if_matched_sid>
+    <same_srcip />
+    <description>PHP2Shell: PHP path enumeration, 10 missing endpoints from one source in 120s.</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>php2shell_recon,</group>
+  </rule>
+
+  <!-- 111004 covers the query-value form; this one covers the path. -->
+  <rule id="111108" level="10">
+    <decoded_as>web-accesslog</decoded_as>
+    <regex type="pcre2">"(?:GET|POST|HEAD)\s[^"\?]*(?:\/|\\|%2f|%5c)sess_[A-Za-z0-9,._\-]{8,}[^"]* HTTP\/</regex>
+    <description>PHP2Shell: request path points at a PHP session file, the include step of the injection chain.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,php2shell_arm,</group>
+  </rule>
+
+  <!-- Log poisoning: write the payload into a log, then include the log. -->
+  <rule id="111109" level="10">
+    <decoded_as>web-accesslog</decoded_as>
+    <regex type="pcre2">"(?:GET|POST|HEAD)\s[^"]*(?:\/var\/log|\/usr\/local\/(?:apache|var)\/log|\/proc\/self\/fd)\/[^"\s]*(?:(?:access|error)[._]?log(?:\.\d+)?|syslog|auth\.log|php_errors\.log|php[0-9.]*-fpm\.log|\d+)[^"]* HTTP\/</regex>
+    <description>PHP2Shell: request path points at a web server log file, the include step of log poisoning.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <rule id="111110" level="12">
+    <decoded_as>web-accesslog</decoded_as>
+    <regex type="pcre2">&lt;\?php[^"]*"$</regex>
+    <description>PHP2Shell: PHP open tag inside the closing header of an access log line, the log poisoning write.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>php2shell_http,</group>
+  </rule>
+
+  <rule id="111111" level="10">
+    <decoded_as>web-accesslog</decoded_as>
+    <regex type="pcre2">(?i)(?=[^\r\n]*\bauth_pass=)(?=[^\r\n]*\bcmd=)</regex>
+    <description>PHP2Shell: request using the authentication and command parameters of the dropped webshell.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_http,php2shell_persist,</group>
+  </rule>
+
+  <!-- Requests to the webshell names the published chains drop. The path form
+       also catches a shell requested without the auth_pass/cmd pair. -->
+  <rule id="111147" level="10">
+    <if_sid>31100,31530</if_sid>
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">(?i)^[^?]*\/(?:pwn|shell|cmd|c99|r57|wso|upshell|\.p2s[^\/]*)\.(?:php|phtml|php5|pht)(?:[\/?]|$)</url>
+    <description>PHP2Shell: request for a webshell filename used by the published chains.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_http,php2shell_persist,</group>
+  </rule>
+
+  <!-- PEAR's pearcmd.php is not meant to be web-reachable; the chain uses it
+       with config-create to write a webshell. -->
+  <rule id="111148" level="8">
+    <if_sid>31100,31530</if_sid>
+    <decoded_as>web-accesslog</decoded_as>
+    <url type="pcre2">(?i)^[^?]*\/pearcmd\.php(?:[?]|$)</url>
+    <description>PHP2Shell: request for pearcmd.php, the PEAR command script used to write a webshell.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_http,php2shell_persist,</group>
+  </rule>
+
+  <!-- PHP names the abort location Unknown when the failing frame has no file. -->
+  <rule id="111112" level="12">
+    <if_sid>30301,31420,31300</if_sid>
+    <regex type="pcre2">Allowed memory size of \d+ bytes exhausted[^\r\n]*in Unknown on line \d+</regex>
+    <description>PHP2Shell: memory-limit abort with no source location, matching the published OOM probe error.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_php,php2shell_oom,</group>
+  </rule>
+
+  <!-- Host scope: neither message carries a request source. -->
+  <rule id="111143" level="12" frequency="3" timeframe="180">
+    <if_matched_group>php2shell_oom</if_matched_group>
+    <description>PHP2Shell: three memory-limit aborts on one host in 180s, the pattern of iterative probes.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_php,</group>
+  </rule>
+
+  <rule id="111113" level="4">
+    <if_sid>31410,31300</if_sid>
+    <match>Failed to write session data</match>
+    <description>PHP2Shell: session save path unwritable. Usually a configuration fault.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_php,</group>
+  </rule>
+
+  <!-- Kernel lines arrive through the syslog decoder, which sets program_name to
+       the tag before the colon. No stock rule group covers kernel messages. -->
+  <rule id="111114" level="10">
+    <program_name>kernel</program_name>
+    <regex type="pcre2">(?&lt;![\w.-])(?:php-fpm|php-cgi|php|apache2|httpd)[\w.-]*\[\d+\]: segfault at</regex>
+    <description>PHP2Shell: PHP worker terminated by a segmentation fault.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_crash,php2shell_crash_signal,</group>
+  </rule>
+
+  <rule id="111115" level="10">
+    <program_name>kernel</program_name>
+    <regex type="pcre2">Out of memory: Kill(?:ed)? process \d+ \((?:apache2|httpd|php-fpm|php-cgi|php)[\w.-]*\)</regex>
+    <description>PHP2Shell: out-of-memory killer terminated a PHP worker.</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_crash,php2shell_crash_signal,</group>
+  </rule>
+
+  <!-- Kernel lines carry no source IP, so this counter is host scope. -->
+  <rule id="111116" level="14" frequency="5" timeframe="300">
+    <if_matched_group>php2shell_crash_signal</if_matched_group>
+    <description>PHP2Shell: 5 PHP worker crashes or OOM kills on one host in 300s.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>php2shell_crash,</group>
+  </rule>
+
+  <!-- FIM: needs syscheck on the web root and the temp directories. -->
+  <rule id="111117" level="12">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">\.htaccess$</field>
+    <description>PHP2Shell: .htaccess added or modified, a step used to persist an auto_prepend_file payload.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_persist,</group>
+  </rule>
+
+  <!-- Checked before 111118 so a named webshell keeps its level 13 alert. -->
+  <rule id="111120" level="13">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">(?:^|\/)(?:pwn|shell|cmd|c99|r57|wso|upshell)\.(?:php|phtml|php5|pht)$|\.p2s[^\/]*\.(?:php|phtml|php5|pht)$</field>
+    <description>PHP2Shell: executable PHP file with a webshell name created on the host.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_persist,</group>
+  </rule>
+
+  <rule id="111118" level="12">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^\/tmp\/.*\.(?:php|phtml|php5|pht)$</field>
+    <description>PHP2Shell: executable PHP file created in /tmp, matching the webshell path used by the published exploits.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_persist,</group>
+  </rule>
+
+  <rule id="111119" level="8">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">\.user\.ini$</field>
+    <description>PHP2Shell: .user.ini added or modified, an alternate auto_prepend_file sink.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_persist,</group>
+  </rule>
+
+  <!-- Command output and proof files the chains write, including the 78ResearchLab
+       id>/var/www/html/pwn.txt and the aarsaputra/bookworm id>/out/p1. -->
+  <rule id="111149" level="8">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">(?:^|\/)(?:tmp|out)\/(?:p1|\.rce)$|(?:^|\/)(?:pwn|rce_proof|leakfile)\.txt$|(?:^|\/)p\/R\.txt$|\.p2s_(?:result|proof)$</field>
+    <description>PHP2Shell: command output or proof file created by a published exploit chain.</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>php2shell_persist,</group>
+  </rule>
+
+  <!-- Body rules see only lines a ModSecurity rule matched. Specific rules come
+       first because analysisd stops at the first matching sibling. -->
+  <rule id="111124" level="13">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">(?i)filename="[^"]*(?:&lt;\?php|%3C(?:\?|%3F)php|\|O:[0-9]+:)</regex>
+    <description>PHP2Shell: PHP code or a serialized object embedded in a multipart filename.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_body,php2shell_arm,</group>
+  </rule>
+
+  <!-- CVE-2026-115560 variant: the serialized object sits in the progress value. -->
+  <rule id="111145" level="13">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">(?i)(?:PHP_SESSION_UPLOAD_PROGRESS|upload_progress_)[\s\S]{0,200}\|O:\d+:"</regex>
+    <description>PHP2Shell: serialized object in the session upload progress value, the handler mismatch injection.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_body,php2shell_arm,</group>
+  </rule>
+
+  <rule id="111125" level="12">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">(?:auto_prepend_file|allow_url_include)\s*=</regex>
+    <description>PHP2Shell: auto_prepend_file or allow_url_include assignment in a logged request, the persistence primitive.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_body,php2shell_persist,</group>
+  </rule>
+
+  <rule id="111127" level="12">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">Content-Disposition:\s*name=[^\r\n]*(?:\[[a-z]*\]){10,}</regex>
+    <description>PHP2Shell: multipart field name with a deep array chain used by the OOM probe builder.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,</group>
+  </rule>
+
+  <rule id="111130" level="10">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">Set-Cookie:\s*PHPSESSID=(?:[^A-Za-z0-9,;\-]|[^;\r\n]*%[0-9A-Fa-f]{2}|[A-Za-z0-9,-]{64,})</regex>
+    <description>PHP2Shell: session cookie with a non-session byte, percent-encoded bytes, or an overlong value, the heap leak in the response.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,</group>
+  </rule>
+
+  <!-- aarsaputra, 78ResearchLab and bookworm reuse one fixed session id. -->
+  <rule id="111144" level="12">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">(?i)PHPSESSID[\s\S]{0,80}attacksessionid\d+</regex>
+    <description>PHP2Shell: fixed session id used by the published attack clients.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,php2shell_arm,</group>
+  </rule>
+
+  <!-- Public clients leave fixed strings in the body. -->
+  <rule id="111150" level="12">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">(?:PHP2SHELL_(?:CHECK_OK|CORE_|CHAIN_OK)|SPRAY\d{3})</regex>
+    <description>PHP2Shell: marker string from a published exploit client in a request body.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,php2shell_arm,</group>
+  </rule>
+
+  <!-- The webshell can take auth_pass and cmd in a POST body, where the access
+       log cannot see them. -->
+  <rule id="111151" level="10">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">(?i)(?=[^\r\n]*\bauth_pass=)(?=[^\r\n]*\bcmd=)</regex>
+    <description>PHP2Shell: webshell authentication and command parameters in a request body.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_body,php2shell_persist,</group>
+  </rule>
+
+  <!-- INI overrides sent as multipart fields, seen in the murrez client. -->
+  <rule id="111152" level="10">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">Content-Disposition:[^\r\n]*name="?(?:auto_prepend_file|allow_url_include|session\.(?:serialize_handler|save_path|upload_progress\.[a-z_]+))"?</regex>
+    <description>PHP2Shell: PHP INI directive name sent as a multipart field.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_body,php2shell_persist,</group>
+  </rule>
+
+  <rule id="111122" level="10">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">Content-Disposition:\s*(?:form-data;\s*)?name="?PHPSESSID"?(?=[;\s]|$)</regex>
+    <description>PHP2Shell: session id supplied in a multipart body field instead of a cookie.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,php2shell_arm,</group>
+  </rule>
+
+  <!-- A benign upload can pick the same boundary, so treat this as supporting evidence. -->
+  <rule id="111123" level="10">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">boundary="?S{17}"?(?=[;\s]|$)</regex>
+    <description>PHP2Shell: multipart boundary of the dimasma and eness clients, S repeated 17 times.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,</group>
+  </rule>
+
+  <rule id="111126" level="10">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">boundary="?(?:(?:C{10}|B{10})(?=[;\s"]|$)|BNDRY[0-9A-Z]+|----php2shellscanner|----php2shellBoundary[0-9a-f]*|----Nuclei)</regex>
+    <description>PHP2Shell: multipart boundary fingerprint of a published exploit client.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,</group>
+  </rule>
+
+  <rule id="111129" level="8">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">filename="[^"]{400,}</regex>
+    <description>PHP2Shell: oversized multipart filename, the session inflation step.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,</group>
+  </rule>
+
+  <!-- assetnote and the nuclei template send a multipart header with no boundary. -->
+  <rule id="111153" level="8">
+    <if_group>modsecurity</if_group>
+    <regex type="pcre2">Content-Type:\s*multipart\/form-data;\s*boundary=(?:""|\s*$)</regex>
+    <description>PHP2Shell: multipart request with an empty boundary, matching the active crash probe.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,</group>
+  </rule>
+
+  <rule id="111121" level="6">
+    <if_group>modsecurity</if_group>
+    <match>PHP_SESSION_UPLOAD_PROGRESS</match>
+    <description>PHP2Shell: upload progress field name present in a logged request body.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,php2shell_arm,</group>
+  </rule>
+
+  <rule id="111128" level="5">
+    <if_group>modsecurity</if_group>
+    <match>Transfer-Encoding: chunked</match>
+    <description>PHP2Shell: chunked request body, used to bypass post_max_size before the upload progress handler runs.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_body,</group>
+  </rule>
+
+  <!-- Process rules use the auditd command group. Specific rules come first
+       because analysisd stops at the first sibling. 111146 uses decoded_as
+       auditd so a /proc/<pid>/mem watch record reaches it. -->
+  <rule id="111132" level="13">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">\/dev\/(?:tcp|udp)\/[^\s"\x27]+|mkfifo\s+\S+|socket\.socket\([^\r\n]*SOCK_STREAM</regex>
+    <description>PHP2Shell: reverse shell primitive in an auditd command record.</description>
+    <mitre>
+      <id>T1059.004</id>
+      <id>T1071</id>
+    </mitre>
+    <group>php2shell_exec,</group>
+  </rule>
+
+  <rule id="111133" level="10">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">(?=[^\r\n]*(?:EXECVE|execve\(|exe="|COMMAND=))(?=[^\r\n]*(?:php-fpm|php-cgi|apache2|httpd))(?=[^\r\n]*\b(?:curl|wget|ncat|netcat|nc|socat)\b)</regex>
+    <description>PHP2Shell: web server or PHP worker fetched or tunnelled with a network utility, seen in a process execution record.</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>php2shell_exec,</group>
+  </rule>
+
+  <rule id="111131" level="13">
+    <if_group>audit_command</if_group>
+    <regex type="pcre2">(?=[^\r\n]*(?:EXECVE|execve\(|exe="|COMMAND=))(?=[^\r\n]*(?:php-fpm|php-cgi|apache2|httpd))(?=[^\r\n]*(?:\/bin\/(?:ba|da)?sh|cmd\.exe|powershell))</regex>
+    <description>PHP2Shell: web server or PHP worker spawned a shell, seen in a process execution record.</description>
+    <mitre>
+      <id>T1059.004</id>
+    </mitre>
+    <group>php2shell_exec,</group>
+  </rule>
+
+  <!-- ikow chain B overwrites a PHP function pointer through /proc/self/mem. -->
+  <rule id="111146" level="13">
+    <decoded_as>auditd</decoded_as>
+    <regex type="pcre2">(?=[^\r\n]*(?:EXECVE|execve\(|exe="|COMMAND=|path=))(?=[^\r\n]*\/proc\/(?:self|\d+)\/mem)(?=[^\r\n]*(?:php|apache|httpd))</regex>
+    <description>PHP2Shell: web server or PHP worker wrote to /proc/&lt;pid&gt;/mem, the function-pointer overwrite step.</description>
+    <mitre>
+      <id>T1055</id>
+    </mitre>
+    <group>php2shell_exec,</group>
+  </rule>
+
+  <!-- Joas v2 webshell prints <<<P2S>>> around system() output. -->
+  <rule id="111134" level="13">
+    <if_group>modsecurity</if_group>
+    <match>&lt;&lt;&lt;P2S&gt;&gt;&gt;</match>
+    <description>PHP2Shell: marker of the v2 auto_prepend webshell in a response or log line.</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_persist,</group>
+  </rule>
+
+  <!--
+    Correlation. Each rule needs the current event plus earlier events from a
+    named group, so one source has to show two stages before the level rises.
+    The counters sit in php2shell_correlate, never in a group they count.
+    Kernel and FIM events carry no srcip, so those rules are host scope.
+  -->
+
+  <rule id="111100" level="15" frequency="2" timeframe="600">
+    <if_sid>111013,111114,111115,111131,111132</if_sid>
+    <if_matched_group>php2shell_arm</if_matched_group>
+    <description>PHP2Shell: worker crash or shell spawn after 2 arming events in 600s.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>php2shell_correlate,</group>
+  </rule>
+
+  <rule id="111141" level="15" frequency="2" timeframe="300">
+    <if_sid>111013,111114,111115</if_sid>
+    <if_matched_group>php2shell_persist</if_matched_group>
+    <description>PHP2Shell: worker corruption after 2 persistence writes in 300s.</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1505.003</id>
+    </mitre>
+    <group>php2shell_correlate,</group>
+  </rule>
+
+  <rule id="111142" level="14" frequency="2" timeframe="300">
+    <if_sid>111011,111101,111102</if_sid>
+    <if_matched_group>php2shell_arm</if_matched_group>
+    <same_srcip />
+    <description>PHP2Shell: failing PHP request from a source that sent 2 arming probes in 300s.</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>php2shell_correlate,</group>
+  </rule>
+</group>

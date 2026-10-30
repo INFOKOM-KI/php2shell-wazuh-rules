@@ -1,0 +1,111 @@
+policy:
+  id: "php2shell_web_server"
+  file: "sca_php2shell_web_server.yml"
+  name: "PHP2Shell: web server and host hardening"
+  description: "Checks auditd, executable PHP files in the web root and /tmp, session file permissions, and ModSecurity."
+  references:
+    - https://github.com/php/php-src/security/advisories/GHSA-w8hw-w9fx-j79w
+    - https://github.com/php/php-src/security/advisories/GHSA-6wmf-4rv5-p3rp
+    - https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html
+  regex_type: "pcre2"
+
+requirements:
+  title: "Linux host"
+  description: "The policy targets Linux web servers."
+  condition: all
+  rules:
+    - 'f:/etc/os-release'
+
+checks:
+  - id: 42100
+    title: "auditd is running"
+    description: "The audit daemon is active."
+    rationale: "Wazuh rules 111131 to 111133 and 111146 read auditd records for shell spawn, reverse shells, and /proc/self/mem writes."
+    remediation: "Start and enable auditd, and load the execve rules."
+    compliance:
+      - nist_sp_800-53: ["AU-2","AU-12"]
+    condition: all
+    rules:
+      - 'p:auditd'
+
+  - id: 42101
+    title: "auditd records execve"
+    description: "The audit rules include execve."
+    rationale: "The process execution rules need execve records to match shell and network utility spawns."
+    remediation: "Add an execve rule to /etc/audit/rules.d/ and reload auditd."
+    compliance:
+      - nist_sp_800-53: ["AU-2","AU-12"]
+    condition: any
+    rules:
+      - 'd:/etc/audit/rules.d -> \.rules$ -> r:-S[[:space:]]+execve'
+      - 'f:/etc/audit/audit.rules -> r:-S[[:space:]]+execve'
+
+  - id: 42102
+    title: "No world-writable PHP files in the web root"
+    description: "Common web roots contain no world-writable PHP files."
+    rationale: "World-writable PHP files allow an attacker to replace application code or keep a webshell. Wazuh rules 111118 and 111120 alert on dropped webshell names."
+    remediation: "Remove the world-writable bit from PHP files and fix ownership."
+    compliance:
+      - nist_sp_800-53: ["CM-5"]
+    condition: none
+    rules:
+      - >-
+        c:find /var/www /srv/www /usr/share/nginx/html /usr/local/www /opt/lampp/htdocs -type f \( -name "*.php" -o -name "*.phtml" -o -name "*.php5" -o -name "*.pht" \) -perm -0002 -print -quit 2>/dev/null -> r:.
+
+  - id: 42103
+    title: "No PHP files in temporary directories"
+    description: "Common temporary directories contain no executable PHP files."
+    rationale: "JoasASantos, ZeroHack, ikow, and syrex write webshells to /tmp. Wazuh rules 111118 and 111120 alert on these files."
+    remediation: "Remove the file, collect it for analysis, and check the web server logs."
+    compliance:
+      - nist_sp_800-53: ["CM-5"]
+    condition: none
+    rules:
+      - >-
+        c:find /tmp /var/tmp /dev/shm -maxdepth 1 -type f \( -name "*.php" -o -name "*.phtml" -o -name "*.php5" -o -name "*.pht" \) -print -quit 2>/dev/null -> r:.
+
+  - id: 42104
+    title: "Session files are not world-readable"
+    description: "Session files under common save paths are not readable by other users."
+    rationale: "Session files can contain injected payloads and session state."
+    remediation: "Set session.save_path permissions to 700 or 1733, and session file mode to 600."
+    compliance:
+      - nist_sp_800-53: ["AC-3","SC-28"]
+    condition: none
+    rules:
+      - >-
+        c:find /var/lib/php/sessions /var/lib/php/session /var/lib/php5/sessions /run/php/sessions /tmp /var/tmp -maxdepth 1 -type f -name "sess_*" -perm -0004 -print -quit 2>/dev/null -> r:.
+
+  - id: 42105
+    title: "ModSecurity is enforcing"
+    description: "A local ModSecurity configuration sets SecRuleEngine to On."
+    rationale: "ModSecurity can block the progress field and malformed multipart probes before PHP parses them."
+    remediation: "Enable ModSecurity with the OWASP CRS and add a rule for PHP_SESSION_UPLOAD_PROGRESS."
+    compliance:
+      - nist_sp_800-53: ["SI-4"]
+    condition: any
+    rules:
+      - 'd:/etc/modsecurity -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/nginx/modsecurity -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/nginx/modsec -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/apache2/modsecurity.d -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/apache2/conf-enabled -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/httpd/modsecurity.d -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/httpd/conf.d -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/nginx/conf.d -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+      - 'd:/etc/nginx/sites-enabled -> .*\.conf$ -> r:^\s*SecRuleEngine\s+On'
+
+  - id: 42106
+    title: "No PHP2Shell overrides in web directories"
+    description: ".htaccess and .user.ini files under common web roots do not enable upload progress or set auto_prepend_file."
+    rationale: "These files can re-enable the upload progress handler or prepend a webshell outside the main php.ini. Wazuh rules 111117, 111119, and 111125 cover these primitives."
+    remediation: "Remove the override and set the directive in the FPM pool or vhost configuration."
+    compliance:
+      - nist_sp_800-53: ["CM-5","SI-2"]
+    condition: none
+    rules:
+      - 'd:/var/www -> (^\.htaccess$|^\.user\.ini$) -> r:session\.upload_progress\.enabled\s*[= ]\s*(On|1|true)|auto_prepend_file\s*[= ]'
+      - 'd:/srv/www -> (^\.htaccess$|^\.user\.ini$) -> r:session\.upload_progress\.enabled\s*[= ]\s*(On|1|true)|auto_prepend_file\s*[= ]'
+      - 'd:/usr/share/nginx/html -> (^\.htaccess$|^\.user\.ini$) -> r:session\.upload_progress\.enabled\s*[= ]\s*(On|1|true)|auto_prepend_file\s*[= ]'
+      - 'd:/usr/local/www -> (^\.htaccess$|^\.user\.ini$) -> r:session\.upload_progress\.enabled\s*[= ]\s*(On|1|true)|auto_prepend_file\s*[= ]'
+      - 'd:/opt/lampp/htdocs -> (^\.htaccess$|^\.user\.ini$) -> r:session\.upload_progress\.enabled\s*[= ]\s*(On|1|true)|auto_prepend_file\s*[= ]'
